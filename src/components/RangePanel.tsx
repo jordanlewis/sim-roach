@@ -12,32 +12,37 @@ export default function RangePanel({ ranges, nodes, onMarkRangeHot }: RangePanel
   const getNodeById = (nodeId: string) => nodes.find(node => node.id === nodeId);
   
   return (
-    <div className="bg-white rounded-lg p-4 shadow-md w-full">
+    <div className="rounded-lg p-4 shadow-md w-full" style={{ backgroundColor: 'white' }}>
       <h2 className="text-xl font-bold mb-4">Ranges</h2>
       
       <div className="space-y-4">
         {ranges.map(range => {
           const leaseholderNode = getNodeById(range.leaseholder);
+          const isHot = range.load > 50;
           
           return (
             <motion.div 
               key={range.id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`border ${range.load > 50 ? 'border-orange-300 bg-orange-50' : 'border-gray-200'} 
-                rounded-md p-3 transition-colors duration-300`}
+              className="border rounded-md p-3 transition-colors duration-300"
+              style={{ 
+                borderColor: isHot ? '#fdba74' : '#e5e7eb',
+                backgroundColor: isHot ? '#fff7ed' : 'white'
+              }}
             >
               <div className="flex justify-between items-center mb-2">
                 <h3 className="font-semibold">Range {range.id}</h3>
                 <div className="flex items-center gap-2">
-                  <span className={`text-sm ${range.load > 50 ? 'text-orange-600' : 'text-gray-600'}`}>
+                  <span className="text-sm" style={{ color: isHot ? '#ea580c' : '#4b5563' }}>
                     {range.load} RPS
                   </span>
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => onMarkRangeHot(range.id)}
-                    className="bg-orange-500 text-white text-xs py-1 px-2 rounded hover:bg-orange-600"
+                    className="text-white text-xs py-1 px-2 rounded"
+                    style={{ backgroundColor: '#f97316' }}
                   >
                     Mark Hot
                   </motion.button>
@@ -53,17 +58,19 @@ export default function RangePanel({ ranges, nodes, onMarkRangeHot }: RangePanel
                   return (
                     <div 
                       key={nodeId} 
-                      className={`text-sm flex items-center p-1 rounded
-                        ${isLeaseholder ? 'bg-blue-100 font-semibold' : ''}`}
+                      className="text-sm flex items-center p-1 rounded"
+                      style={isLeaseholder ? { backgroundColor: '#dbeafe', fontWeight: 600 } : {}}
                     >
                       <div 
-                        className={`w-3 h-3 rounded-full mr-2 
-                          ${node?.status === 'online' ? 'bg-green-500' : 'bg-red-500'}`} 
+                        className="w-3 h-3 rounded-full mr-2"
+                        style={{ 
+                          backgroundColor: node?.status === 'online' ? '#22c55e' : '#ef4444'
+                        }} 
                       />
                       <span>
                         Node {nodeId} 
-                        {isLeaseholder && <span className="ml-1 text-blue-600">(Leaseholder)</span>}
-                        {node && <span className="text-gray-500 ml-1">{node.region}/{node.zone}</span>}
+                        {isLeaseholder && <span className="ml-1" style={{ color: '#2563eb' }}>(Leaseholder)</span>}
+                        {node && <span className="ml-1" style={{ color: '#6b7280' }}>{node.region}/{node.zone}</span>}
                       </span>
                     </div>
                   );

@@ -53,14 +53,14 @@ function App() {
   // Intro screen if not started
   if (!isStarted) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-gray-50">
+      <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{ backgroundColor: '#f9fafb' }}>
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
           className="text-center max-w-3xl"
         >
-          <h1 className="text-4xl font-bold mb-4 text-blue-600">
+          <h1 className="text-4xl font-bold mb-4" style={{ color: '#2563eb' }}>
             CockroachDB Simulator
           </h1>
           <p className="text-xl mb-8">
@@ -72,7 +72,8 @@ function App() {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setIsStarted(true)}
-            className="bg-green-600 text-white font-bold py-2 px-6 rounded-full shadow-lg"
+            className="font-bold py-2 px-6 rounded-full shadow-lg"
+            style={{ backgroundColor: '#16a34a', color: 'white' }}
           >
             Start Exploring
           </motion.button>
@@ -83,10 +84,10 @@ function App() {
   
   // Main simulator interface
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+    <div className="min-h-screen p-4 md:p-6" style={{ backgroundColor: '#f9fafb' }}>
       <header className="mb-6">
-        <h1 className="text-2xl font-bold text-blue-600">CockroachDB Simulator</h1>
-        <p className="text-gray-600">Explore how CockroachDB handles node failures, hot ranges, and more</p>
+        <h1 className="text-2xl font-bold" style={{ color: '#2563eb' }}>CockroachDB Simulator</h1>
+        <p style={{ color: '#4b5563' }}>Explore how CockroachDB handles node failures, hot ranges, and more</p>
       </header>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
