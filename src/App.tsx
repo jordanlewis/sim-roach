@@ -28,6 +28,13 @@ function App() {
     setNodes([...simulatorService.getNodes()]);
     setRanges([...simulatorService.getRanges()]);
   };
+
+  // Handle region status toggle
+  const handleRegionClick = (regionName: string) => {
+    simulatorService.toggleRegionStatus(regionName);
+    setNodes([...simulatorService.getNodes()]);
+    setRanges([...simulatorService.getRanges()]);
+  };
   
   // Handle adding a new node
   const handleAddNode = () => {
@@ -112,7 +119,8 @@ function App() {
           <ClusterMap 
             nodes={nodes}
             ranges={ranges}
-            onNodeClick={handleNodeClick} 
+            onNodeClick={handleNodeClick}
+            onRegionClick={handleRegionClick}
           />
         </div>
         

@@ -6,9 +6,10 @@ interface ClusterMapProps {
   nodes: Node[];
   ranges: Range[];
   onNodeClick: (nodeId: string) => void;
+  onRegionClick?: (regionName: string) => void;
 }
 
-export default function ClusterMap({ nodes, ranges, onNodeClick }: ClusterMapProps) {
+export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }: ClusterMapProps) {
   // State to track highlighted range
   const [highlightedRangeId, setHighlightedRangeId] = useState<string | null>(null);
   
@@ -61,18 +62,34 @@ export default function ClusterMap({ nodes, ranges, onNodeClick }: ClusterMapPro
             const regionNodes = nodes.filter(node => node.region === region);
             const zones = [...new Set(regionNodes.map(node => node.zone))];
             
+            // Check if any nodes in this region are offline
+            const hasOfflineNodes = regionNodes.some(node => node.status === 'offline');
+            const allNodesOffline = regionNodes.every(node => node.status === 'offline');
+            
             return (
               <div 
                 key={region}
                 className="border rounded-lg p-3"
                 style={{ 
-                  borderColor: '#d1d5db',
-                  backgroundColor: 'rgba(255, 255, 255, 0.7)'
+                  borderColor: allNodesOffline ? '#ef4444' : (hasOfflineNodes ? '#f97316' : '#d1d5db'),
+                  backgroundColor: allNodesOffline ? 'rgba(254, 202, 202, 0.3)' : 'rgba(255, 255, 255, 0.7)'
                 }}
               >
-                <h3 className="text-lg font-semibold mb-3" style={{ color: '#1f2937' }}>
-                  {region}
-                </h3>
+                <motion.div className="flex items-center space-x-1 mb-3">
+                  <motion.h3 
+                    className="text-lg font-semibold cursor-pointer inline-block"
+                    style={{ color: '#1f2937' }}
+                    onClick={() => onRegionClick && onRegionClick(region)}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    title={`Click to toggle all nodes in ${region}`}
+                  >
+                    {region}
+                  </motion.h3>
+                  <span className="text-xs text-gray-500 bg-gray-100 px-1 rounded">
+                    Click to toggle region
+                  </span>
+                </motion.div>
                 
                 <div className="flex flex-col space-y-4">
                   {zones.map(zone => {

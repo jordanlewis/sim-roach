@@ -163,7 +163,7 @@ export class SimulatorService {
     return newNode;
   }
   
-  // Add a new range
+  // Add a new range with intelligent replica placement
   addRange(): Range {
     const onlineNodes = this.nodes.filter(node => node.status === 'online');
     const replicationFactor = this.config.replicationFactor;
@@ -172,31 +172,24 @@ export class SimulatorService {
       throw new Error(`Not enough online nodes to create a new range. Need at least ${replicationFactor} nodes.`);
     }
     
-    // Try to distribute replicas across regions for better availability
-    const selectedNodes: Node[] = [];
-    const regionsUsed = new Set<string>();
-    const shuffledNodes = [...onlineNodes].sort(() => 0.5 - Math.random());
+    // Get the selected nodes using our replica placement algorithm
+    const selectedNodes = this.selectNodesForReplicas(onlineNodes, replicationFactor);
     
-    // First pass: try to select one node per region
-    for (const node of shuffledNodes) {
-      if (!regionsUsed.has(node.region)) {
-        selectedNodes.push(node);
-        regionsUsed.add(node.region);
-      }
-      
-      if (selectedNodes.length === replicationFactor) break;
+    // Choose leaseholder - prefer node in most populated region
+    const regionCounts: Record<string, number> = {};
+    for (const node of this.nodes) {
+      regionCounts[node.region] = (regionCounts[node.region] || 0) + 1;
     }
     
-    // Second pass: if we couldn't get enough regions, add more nodes from any region
-    if (selectedNodes.length < replicationFactor) {
-      const remainingNodes = shuffledNodes.filter(node => !selectedNodes.includes(node));
-      selectedNodes.push(...remainingNodes.slice(0, replicationFactor - selectedNodes.length));
-    }
+    // Sort selected nodes by region popularity (descending)
+    const sortedForLeaseholder = [...selectedNodes].sort((a, b) => 
+      regionCounts[b.region] - regionCounts[a.region]
+    );
     
     const newRange: Range = {
       id: `r${this.nextRangeId}`,
       replicas: selectedNodes.map(node => node.id),
-      leaseholder: selectedNodes[0].id,
+      leaseholder: sortedForLeaseholder[0].id,
       load: 10 // Start with low load
     };
     
@@ -204,6 +197,134 @@ export class SimulatorService {
     this.nextRangeId++;
     
     return newRange;
+  }
+  
+  // Select nodes for replicas using advanced placement rules
+  private selectNodesForReplicas(availableNodes: Node[], replicationFactor: number): Node[] {
+    // 1. Classify nodes by region and zone
+    const nodesByRegion: Record<string, Record<string, Node[]>> = {};
+    const allRegions = new Set<string>();
+    const allZones: Record<string, Set<string>> = {};
+    
+    for (const node of availableNodes) {
+      allRegions.add(node.region);
+      
+      if (!allZones[node.region]) {
+        allZones[node.region] = new Set<string>();
+      }
+      allZones[node.region].add(node.zone);
+      
+      if (!nodesByRegion[node.region]) {
+        nodesByRegion[node.region] = {};
+      }
+      
+      if (!nodesByRegion[node.region][node.zone]) {
+        nodesByRegion[node.region][node.zone] = [];
+      }
+      
+      nodesByRegion[node.region][node.zone].push(node);
+    }
+    
+    const selectedNodes: Node[] = [];
+    const usedRegions = new Set<string>();
+    const usedZones = new Set<string>(); // Format: "region/zone"
+    
+    // 2. Maximum region diversity - select one node from each region
+    if (allRegions.size >= replicationFactor) {
+      // We have enough regions to place each replica in a different region
+      const shuffledRegions = [...allRegions].sort(() => 0.5 - Math.random());
+      
+      for (const region of shuffledRegions.slice(0, replicationFactor)) {
+        // For each region, select one zone at random
+        const zonesInRegion = [...allZones[region]];
+        const randomZone = zonesInRegion[Math.floor(Math.random() * zonesInRegion.length)];
+        
+        // Get a random node from this region/zone
+        const nodesInZone = nodesByRegion[region][randomZone];
+        const selectedNode = nodesInZone[Math.floor(Math.random() * nodesInZone.length)];
+        
+        selectedNodes.push(selectedNode);
+        usedRegions.add(region);
+        usedZones.add(`${region}/${randomZone}`);
+        
+        if (selectedNodes.length === replicationFactor) break;
+      }
+    } else {
+      // 3. Not enough regions - maximize region diversity, then zone diversity
+      
+      // First, add one node from each available region
+      for (const region of allRegions) {
+        // Try to use different zones in each region
+        const zonesInRegion = [...allZones[region]];
+        let selectedZone = null;
+        
+        // Select a zone we haven't used yet if possible
+        for (const zone of zonesInRegion) {
+          if (!usedZones.has(`${region}/${zone}`)) {
+            selectedZone = zone;
+            break;
+          }
+        }
+        
+        // If all zones in this region are used, just pick one at random
+        if (selectedZone === null) {
+          selectedZone = zonesInRegion[Math.floor(Math.random() * zonesInRegion.length)];
+        }
+        
+        // Get a random node from this region/zone
+        const nodesInZone = nodesByRegion[region][selectedZone];
+        const selectedNode = nodesInZone[Math.floor(Math.random() * nodesInZone.length)];
+        
+        selectedNodes.push(selectedNode);
+        usedRegions.add(region);
+        usedZones.add(`${region}/${selectedZone}`);
+        
+        if (selectedNodes.length === replicationFactor) break;
+      }
+      
+      // 4. Still need more nodes - maximize zone diversity within used regions
+      if (selectedNodes.length < replicationFactor) {
+        // For each region, try to use all available zones before reusing
+        const regionsToConsider = [...usedRegions].sort(() => 0.5 - Math.random());
+        
+        for (const region of regionsToConsider) {
+          const zonesInRegion = [...allZones[region]];
+          
+          // Find zones not yet used in this region
+          for (const zone of zonesInRegion) {
+            if (!usedZones.has(`${region}/${zone}`)) {
+              const nodesInZone = nodesByRegion[region][zone];
+              if (nodesInZone.length > 0) {
+                const selectedNode = nodesInZone[Math.floor(Math.random() * nodesInZone.length)];
+                
+                selectedNodes.push(selectedNode);
+                usedZones.add(`${region}/${zone}`);
+                
+                if (selectedNodes.length === replicationFactor) break;
+              }
+            }
+          }
+          
+          if (selectedNodes.length === replicationFactor) break;
+        }
+      }
+      
+      // 5. Last resort - just add nodes from any region/zone
+      if (selectedNodes.length < replicationFactor) {
+        // Filter out nodes we've already selected
+        const remainingNodes = availableNodes.filter(node => 
+          !selectedNodes.some(selected => selected.id === node.id)
+        );
+        
+        // Randomly select from remaining nodes
+        const shuffledRemaining = [...remainingNodes].sort(() => 0.5 - Math.random());
+        selectedNodes.push(
+          ...shuffledRemaining.slice(0, replicationFactor - selectedNodes.length)
+        );
+      }
+    }
+    
+    return selectedNodes;
   }
   
   // Mark a range as 'hot' (high load)
@@ -223,67 +344,226 @@ export class SimulatorService {
   
   // Private helper methods
   private migrateLeaseholdersFromOfflineNode(nodeId: string): void {
+    // Get the offline node
+    const offlineNode = this.nodes.find(node => node.id === nodeId);
+    if (!offlineNode) return;
+    
+    // Process each range that has a replica on the offline node
     this.ranges.forEach((range, index) => {
-      if (range.leaseholder === nodeId) {
-        // Find online replicas for this range
-        const onlineReplicas = range.replicas.filter(replicaId => {
-          const node = this.nodes.find(n => n.id === replicaId);
-          return node && node.status === 'online';
-        });
-        
-        if (onlineReplicas.length > 0) {
-          // Move leaseholder to an online replica
-          this.ranges[index] = {
-            ...range,
-            leaseholder: onlineReplicas[0]
-          };
-        }
-      }
-      
-      // If a replica is on the offline node, try to replace it
+      // Check if this range has a replica on the offline node
       if (range.replicas.includes(nodeId)) {
-        const onlineNodes = this.nodes.filter(node => 
-          node.status === 'online' && !range.replicas.includes(node.id)
+        // Make a copy of the current replicas
+        const currentReplicas = [...range.replicas];
+        let newLeaseholder = range.leaseholder;
+        
+        // 1. Handle leaseholder migration if needed
+        if (range.leaseholder === nodeId) {
+          // Find all online replicas for this range
+          const onlineReplicaIds = currentReplicas.filter(replicaId => {
+            if (replicaId === nodeId) return false;
+            const node = this.nodes.find(n => n.id === replicaId);
+            return node && node.status === 'online';
+          });
+          
+          if (onlineReplicaIds.length > 0) {
+            // Find replicas in different regions
+            const replicaNodes = onlineReplicaIds.map(id => 
+              this.nodes.find(n => n.id === id)
+            ).filter((node): node is Node => !!node);
+            
+            // Prioritize replicas in different regions from the failed node
+            const differentRegionReplicas = replicaNodes.filter(node => 
+              node.region !== offlineNode.region
+            );
+            
+            if (differentRegionReplicas.length > 0) {
+              // Choose a replica from a different region as the new leaseholder
+              newLeaseholder = differentRegionReplicas[0].id;
+            } else if (replicaNodes.length > 0) {
+              // Fall back to any online replica
+              newLeaseholder = replicaNodes[0].id;
+            }
+          }
+        }
+        
+        // 2. Find a replacement node for the replica
+        // Get all online nodes that aren't already replicas for this range
+        const availableReplaceNodes = this.nodes.filter(node => 
+          node.status === 'online' && !currentReplicas.includes(node.id)
         );
         
-        if (onlineNodes.length > 0) {
-          const newReplicas = range.replicas.map(replicaId => 
-            replicaId === nodeId ? onlineNodes[0].id : replicaId
+        if (availableReplaceNodes.length > 0) {
+          // Get the regions and zones of existing replicas
+          const existingReplicaNodes = currentReplicas
+            .filter(id => id !== nodeId)
+            .map(id => this.nodes.find(n => n.id === id))
+            .filter((node): node is Node => !!node);
+          
+          const existingRegions = new Set(existingReplicaNodes.map(node => node.region));
+          const existingZones = new Set(existingReplicaNodes.map(node => `${node.region}/${node.zone}`));
+          
+          // Try to find an optimal replacement node
+          let replacementNode: Node | undefined;
+          
+          // First, try to find a node in a region we don't already have
+          const nodesInNewRegions = availableReplaceNodes.filter(node => 
+            !existingRegions.has(node.region)
           );
           
-          this.ranges[index] = {
-            ...range,
-            replicas: newReplicas,
-            // If leaseholder was on the offline node, move it
-            leaseholder: range.leaseholder === nodeId ? newReplicas[0] : range.leaseholder
-          };
+          if (nodesInNewRegions.length > 0) {
+            replacementNode = nodesInNewRegions[0];
+          } else {
+            // Next, try to find a node in a zone we don't already have
+            const nodesInNewZones = availableReplaceNodes.filter(node => 
+              !existingZones.has(`${node.region}/${node.zone}`)
+            );
+            
+            if (nodesInNewZones.length > 0) {
+              replacementNode = nodesInNewZones[0];
+            } else {
+              // Finally, just use any available node
+              replacementNode = availableReplaceNodes[0];
+            }
+          }
+          
+          if (replacementNode) {
+            // Create new replicas list with the replacement
+            const newReplicas = currentReplicas.map(replicaId => 
+              replicaId === nodeId ? replacementNode!.id : replicaId
+            );
+            
+            // Update the range
+            this.ranges[index] = {
+              ...range,
+              replicas: newReplicas,
+              leaseholder: newLeaseholder
+            };
+          }
+        } else {
+          // No replacement nodes available, but still update leaseholder if needed
+          if (range.leaseholder === nodeId && newLeaseholder !== nodeId) {
+            this.ranges[index] = {
+              ...range,
+              leaseholder: newLeaseholder
+            };
+          }
         }
       }
     });
   }
   
   private rebalanceReplicas(): void {
-    // Very simple rebalancing logic
-    // In a real implementation, this would be much more sophisticated
+    // More sophisticated replica rebalancing when a new node is added
     const newNode = this.nodes[this.nodes.length - 1];
+    if (newNode.status !== 'online') return;
     
-    // Move some replicas to the new node for better distribution
-    this.ranges.forEach((range, index) => {
-      // Only rebalance some ranges to avoid mass movement
-      if (Math.random() > 0.7) {
-        const replacedReplicaIndex = Math.floor(Math.random() * range.replicas.length);
-        const newReplicas = [...range.replicas];
-        newReplicas[replacedReplicaIndex] = newNode.id;
-        
-        this.ranges[index] = {
-          ...range,
-          replicas: newReplicas,
-          // If we replaced the leaseholder, update it
-          leaseholder: range.leaseholder === range.replicas[replacedReplicaIndex] 
-            ? newNode.id 
-            : range.leaseholder
-        };
+    // Calculate current replica distribution by node
+    const replicaCounts = new Map<string, number>();
+    this.nodes.forEach(node => {
+      replicaCounts.set(node.id, 0);
+    });
+    
+    this.ranges.forEach(range => {
+      range.replicas.forEach(nodeId => {
+        const current = replicaCounts.get(nodeId) || 0;
+        replicaCounts.set(nodeId, current + 1);
+      });
+    });
+    
+    // Set an initial count for the new node
+    replicaCounts.set(newNode.id, 0);
+    
+    // Helper to find the node with the most replicas in a given list
+    const getNodeWithMostReplicas = (nodeIds: string[]): string | null => {
+      let maxCount = -1;
+      let nodeWithMax: string | null = null;
+      
+      for (const nodeId of nodeIds) {
+        const count = replicaCounts.get(nodeId) || 0;
+        if (count > maxCount) {
+          maxCount = count;
+          nodeWithMax = nodeId;
+        }
       }
+      
+      return nodeWithMax;
+    };
+    
+    // Identify ranges that would benefit from rebalancing
+    // We want to prioritize:
+    // 1. Ranges that have multiple replicas in the same region
+    // 2. Ranges with replicas on nodes that have many replicas
+    const rangesToRebalance: { rangeIndex: number, nodeToReplace: string }[] = [];
+    
+    this.ranges.forEach((range, rangeIndex) => {
+      // Check if any optimizations are possible
+      const replicaNodes = range.replicas
+        .map(id => this.nodes.find(n => n.id === id))
+        .filter((node): node is Node => !!node);
+      
+      // Check for replicas in the same region
+      const regionsCount: Record<string, string[]> = {};
+      
+      replicaNodes.forEach(node => {
+        if (!regionsCount[node.region]) {
+          regionsCount[node.region] = [];
+        }
+        regionsCount[node.region].push(node.id);
+      });
+      
+      // Find regions with more than one replica
+      for (const [region, nodeIds] of Object.entries(regionsCount)) {
+        if (nodeIds.length > 1) {
+          // Region has multiple replicas - replace one with our new node
+          // if the new node is in a different region
+          if (newNode.region !== region) {
+            const nodeToReplace = getNodeWithMostReplicas(nodeIds);
+            if (nodeToReplace) {
+              rangesToRebalance.push({ rangeIndex, nodeToReplace });
+              break; // Only one replacement per range
+            }
+          }
+        }
+      }
+      
+      // If we didn't find regions with multiple replicas
+      if (rangesToRebalance.length <= rangeIndex) {
+        // Just pick the node with the most replicas
+        const nodeToReplace = getNodeWithMostReplicas(range.replicas);
+        if (nodeToReplace) {
+          rangesToRebalance.push({ rangeIndex, nodeToReplace });
+        }
+      }
+    });
+    
+    // Limit the number of ranges to rebalance at once
+    const maxRangesToRebalance = Math.min(3, Math.ceil(this.ranges.length / 4));
+    const selectedRanges = rangesToRebalance
+      .sort(() => 0.5 - Math.random()) // Shuffle
+      .slice(0, maxRangesToRebalance);
+    
+    // Perform rebalancing
+    selectedRanges.forEach(({ rangeIndex, nodeToReplace }) => {
+      const range = this.ranges[rangeIndex];
+      const newReplicas = range.replicas.map(replicaId => 
+        replicaId === nodeToReplace ? newNode.id : replicaId
+      );
+      
+      // Update replica count tracking
+      const oldCount = replicaCounts.get(nodeToReplace) || 0;
+      replicaCounts.set(nodeToReplace, oldCount - 1);
+      
+      const newCount = replicaCounts.get(newNode.id) || 0;
+      replicaCounts.set(newNode.id, newCount + 1);
+      
+      this.ranges[rangeIndex] = {
+        ...range,
+        replicas: newReplicas,
+        // If we replaced the leaseholder, update it
+        leaseholder: range.leaseholder === nodeToReplace
+          ? newNode.id 
+          : range.leaseholder
+      };
     });
   }
   
@@ -430,6 +710,41 @@ export class SimulatorService {
             }
           }
         }
+      });
+    }
+  }
+
+  // Toggle all nodes in a region between online and offline
+  toggleRegionStatus(regionName: string): void {
+    // Get all nodes in the region
+    const regionNodes = this.nodes.filter(node => node.region === regionName);
+    
+    // Get the current status of the region (considering it offline if any node is offline)
+    const isRegionOffline = regionNodes.some(node => node.status === 'offline');
+    
+    // Toggle all nodes in the region to the opposite status
+    const newStatus: 'online' | 'offline' = isRegionOffline ? 'online' : 'offline';
+    
+    // Update each node's status
+    regionNodes.forEach(node => {
+      const nodeIndex = this.nodes.findIndex(n => n.id === node.id);
+      if (nodeIndex !== -1) {
+        this.nodes[nodeIndex] = {
+          ...this.nodes[nodeIndex],
+          status: newStatus
+        };
+      }
+    });
+    
+    // If region is being marked as offline, migrate leaseholders and replicas
+    if (newStatus === 'offline') {
+      regionNodes.forEach(node => {
+        this.migrateLeaseholdersFromOfflineNode(node.id);
+      });
+    } else {
+      // If region is coming back online, rebalance to it
+      regionNodes.forEach(node => {
+        this.rebalanceToOnlineNode(node.id);
       });
     }
   }
