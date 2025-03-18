@@ -4,8 +4,13 @@
 
 @layer base {
   body {
-    @apply font-sans dark:bg-cockroach-dark dark:text-white;
     background-color: #f3f4f6;
     color: #111827;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  
+  body.dark {
+    background-color: #242A35;
+    color: white;
   }
 }
