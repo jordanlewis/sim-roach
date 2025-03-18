@@ -3,20 +3,22 @@ import { motion } from 'framer-motion';
 import { Node, Range } from './types';
 import ClusterMap from './components/ClusterMap';
 import RangePanel from './components/RangePanel';
-import ControlPanel from './components/ControlPanel';
-import { SimulatorService } from './services/simulatorService';
+import ControlPanel, { SimulatorConfig } from './components/ControlPanel';
+import { SimulatorService, DEFAULT_CONFIG } from './services/simulatorService';
 
 function App() {
   const [isStarted, setIsStarted] = useState(false);
-  const [simulatorService] = useState(new SimulatorService());
+  const [simulatorService] = useState(new SimulatorService(DEFAULT_CONFIG));
   const [nodes, setNodes] = useState<Node[]>([]);
   const [ranges, setRanges] = useState<Range[]>([]);
+  const [config, setConfig] = useState<SimulatorConfig>(DEFAULT_CONFIG);
   
   // Initialize simulator on start
   useEffect(() => {
     if (isStarted) {
       setNodes(simulatorService.getNodes());
       setRanges(simulatorService.getRanges());
+      setConfig(simulatorService.getConfig());
     }
   }, [isStarted, simulatorService]);
   
@@ -48,6 +50,14 @@ function App() {
   const handleMarkRangeHot = (rangeId: string) => {
     simulatorService.markRangeHot(rangeId);
     setRanges([...simulatorService.getRanges()]);
+  };
+  
+  // Handle configuration update
+  const handleUpdateConfig = (newConfig: SimulatorConfig) => {
+    const { nodes: updatedNodes, ranges: updatedRanges } = simulatorService.updateConfig(newConfig);
+    setNodes(updatedNodes);
+    setRanges(updatedRanges);
+    setConfig(newConfig);
   };
   
   // Intro screen if not started
@@ -91,6 +101,15 @@ function App() {
       </header>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="md:col-span-3 mb-4">
+          <ControlPanel 
+            onAddNode={handleAddNode} 
+            onAddRange={handleAddRange}
+            onUpdateConfig={handleUpdateConfig}
+            currentConfig={config} 
+          />
+        </div>
+        
         <div className="md:col-span-2">
           <ClusterMap 
             nodes={nodes}
@@ -100,11 +119,6 @@ function App() {
         </div>
         
         <div className="md:col-span-1 space-y-6">
-          <ControlPanel 
-            onAddNode={handleAddNode} 
-            onAddRange={handleAddRange} 
-          />
-          
           <RangePanel 
             ranges={ranges} 
             nodes={nodes} 

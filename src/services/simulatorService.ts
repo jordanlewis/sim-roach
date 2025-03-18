@@ -1,34 +1,26 @@
 import { Node, Range } from '../types';
+import { SimulatorConfig } from '../components/ControlPanel';
 
-// Initial data for the simulator
-const initialNodes: Node[] = [
-  { id: 'n1', region: 'us-east', zone: 'a', status: 'online' },
-  { id: 'n2', region: 'us-east', zone: 'b', status: 'online' },
-  { id: 'n3', region: 'us-east', zone: 'c', status: 'online' },
-  { id: 'n4', region: 'us-west', zone: 'a', status: 'online' },
-  { id: 'n5', region: 'us-west', zone: 'b', status: 'online' },
-  { id: 'n6', region: 'eu-west', zone: 'a', status: 'online' },
-];
+// Default configuration
+export const DEFAULT_CONFIG: SimulatorConfig = {
+  regionCount: 3,
+  replicationFactor: 3,
+  nodeCount: 6,
+  rangeCount: 3
+};
 
-const initialRanges: Range[] = [
-  { 
-    id: 'r1', 
-    replicas: ['n1', 'n4', 'n6'], 
-    leaseholder: 'n1', 
-    load: 20 
-  },
-  { 
-    id: 'r2', 
-    replicas: ['n2', 'n5', 'n6'], 
-    leaseholder: 'n2', 
-    load: 15 
-  },
-  { 
-    id: 'r3', 
-    replicas: ['n3', 'n4', 'n5'], 
-    leaseholder: 'n3', 
-    load: 30 
-  },
+// Available regions and zones
+const availableRegions = [
+  { name: 'us-east', zones: ['a', 'b', 'c'] },
+  { name: 'us-west', zones: ['a', 'b', 'c'] },
+  { name: 'eu-west', zones: ['a', 'b', 'c'] },
+  { name: 'eu-central', zones: ['a', 'b', 'c'] },
+  { name: 'ap-southeast', zones: ['a', 'b', 'c'] },
+  { name: 'ap-northeast', zones: ['a', 'b', 'c'] },
+  { name: 'sa-east', zones: ['a', 'b', 'c'] },
+  { name: 'af-south', zones: ['a', 'b', 'c'] },
+  { name: 'au-southeast', zones: ['a', 'b', 'c'] },
+  { name: 'ca-central', zones: ['a', 'b', 'c'] },
 ];
 
 // Helper functions
@@ -36,24 +28,89 @@ const getRandomElement = <T>(array: T[]): T => {
   return array[Math.floor(Math.random() * array.length)];
 };
 
-const getRandomRegion = (): string => {
-  const regions = ['us-east', 'us-west', 'eu-west'];
-  return getRandomElement(regions);
-};
-
-const getRandomZone = (): string => {
-  const zones = ['a', 'b', 'c'];
-  return getRandomElement(zones);
-};
-
 // Main simulator service
 export class SimulatorService {
-  private nodes: Node[] = [...initialNodes];
-  private ranges: Range[] = [...initialRanges];
-  private nextNodeId = 7;
-  private nextRangeId = 4;
+  private nodes: Node[] = [];
+  private ranges: Range[] = [];
+  private nextNodeId = 1;
+  private nextRangeId = 1;
+  private config: SimulatorConfig = DEFAULT_CONFIG;
+  private selectedRegions: typeof availableRegions = [];
   
-  constructor() {}
+  constructor(config: SimulatorConfig = DEFAULT_CONFIG) {
+    this.config = config;
+    this.initializeCluster();
+  }
+  
+  private initializeCluster() {
+    // Reset state
+    this.nodes = [];
+    this.ranges = [];
+    this.nextNodeId = 1;
+    this.nextRangeId = 1;
+    
+    // Select regions based on config
+    this.selectedRegions = this.selectRandomRegions(this.config.regionCount);
+    
+    // Create nodes
+    this.createInitialNodes();
+    
+    // Create ranges
+    this.createInitialRanges();
+  }
+  
+  private selectRandomRegions(count: number) {
+    // Shuffle regions and take the first 'count' items
+    return [...availableRegions]
+      .sort(() => 0.5 - Math.random())
+      .slice(0, Math.min(count, availableRegions.length));
+  }
+  
+  private createInitialNodes() {
+    // Distribute nodes evenly across regions and zones
+    const targetNodesPerRegion = Math.ceil(this.config.nodeCount / this.selectedRegions.length);
+    
+    let nodeId = 1;
+    this.selectedRegions.forEach(region => {
+      const nodesForThisRegion = (nodeId + targetNodesPerRegion <= this.config.nodeCount + 1) 
+        ? targetNodesPerRegion 
+        : Math.max(0, this.config.nodeCount - nodeId + 1);
+      
+      // Distribute across zones
+      for (let i = 0; i < nodesForThisRegion; i++) {
+        const zoneIndex = i % region.zones.length;
+        this.nodes.push({
+          id: `n${nodeId}`,
+          region: region.name,
+          zone: region.zones[zoneIndex],
+          status: 'online'
+        });
+        nodeId++;
+      }
+    });
+    
+    this.nextNodeId = nodeId;
+  }
+  
+  private createInitialRanges() {
+    for (let i = 1; i <= this.config.rangeCount; i++) {
+      this.addRange();
+    }
+  }
+  
+  // Configuration methods
+  updateConfig(newConfig: SimulatorConfig) {
+    this.config = newConfig;
+    this.initializeCluster();
+    return {
+      nodes: this.getNodes(),
+      ranges: this.getRanges()
+    };
+  }
+  
+  getConfig(): SimulatorConfig {
+    return { ...this.config };
+  }
   
   // Get all nodes
   getNodes(): Node[] {
@@ -109,14 +166,32 @@ export class SimulatorService {
   // Add a new range
   addRange(): Range {
     const onlineNodes = this.nodes.filter(node => node.status === 'online');
+    const replicationFactor = this.config.replicationFactor;
     
-    if (onlineNodes.length < 3) {
-      throw new Error('Not enough online nodes to create a new range.');
+    if (onlineNodes.length < replicationFactor) {
+      throw new Error(`Not enough online nodes to create a new range. Need at least ${replicationFactor} nodes.`);
     }
     
-    // Select three distinct nodes for replicas
-    const shuffled = [...onlineNodes].sort(() => 0.5 - Math.random());
-    const selectedNodes = shuffled.slice(0, 3);
+    // Try to distribute replicas across regions for better availability
+    const selectedNodes: Node[] = [];
+    const regionsUsed = new Set<string>();
+    const shuffledNodes = [...onlineNodes].sort(() => 0.5 - Math.random());
+    
+    // First pass: try to select one node per region
+    for (const node of shuffledNodes) {
+      if (!regionsUsed.has(node.region)) {
+        selectedNodes.push(node);
+        regionsUsed.add(node.region);
+      }
+      
+      if (selectedNodes.length === replicationFactor) break;
+    }
+    
+    // Second pass: if we couldn't get enough regions, add more nodes from any region
+    if (selectedNodes.length < replicationFactor) {
+      const remainingNodes = shuffledNodes.filter(node => !selectedNodes.includes(node));
+      selectedNodes.push(...remainingNodes.slice(0, replicationFactor - selectedNodes.length));
+    }
     
     const newRange: Range = {
       id: `r${this.nextRangeId}`,
