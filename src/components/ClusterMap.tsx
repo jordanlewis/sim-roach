@@ -186,17 +186,21 @@ export default function ClusterMap({ nodes, ranges, onNodeClick }: ClusterMapPro
         </div>
       </div>
       
-      {/* Information about highlighted range */}
-      {highlightedRangeId && (
-        <div className="mt-2 text-center text-sm" style={{ color: '#4b5563' }}>
-          <span style={{ color: '#3b82f6', fontWeight: 'bold' }}>Range {highlightedRangeId}</span> selected
-          {' - '}
-          <span>
-            {getRangeById(highlightedRangeId)?.replicas.length} replicas 
-            {getRangeById(highlightedRangeId)?.load > 50 ? ' (Hot Range)' : ''}
-          </span>
-        </div>
-      )}
+      {/* Information about highlighted range - always present with fixed height */}
+      <div className="mt-2 text-center text-sm h-6" style={{ color: '#4b5563' }}>
+        {highlightedRangeId ? (
+          <>
+            <span style={{ color: '#3b82f6', fontWeight: 'bold' }}>Range {highlightedRangeId}</span> selected
+            {' - '}
+            <span>
+              {getRangeById(highlightedRangeId)?.replicas.length} replicas 
+              {getRangeById(highlightedRangeId)?.load > 50 ? ' (Hot Range)' : ''}
+            </span>
+          </>
+        ) : (
+          <span className="opacity-0">Placeholder for fixed height</span>
+        )}
+      </div>
     </div>
   );
 }
