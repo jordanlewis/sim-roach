@@ -1,9 +1,6 @@
-import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface ControlPanelProps {
-  onAddNode: () => void;
-  onAddRange: () => void;
   onUpdateConfig: (config: SimulatorConfig) => void;
   currentConfig: SimulatorConfig;
 }
@@ -16,12 +13,15 @@ export interface SimulatorConfig {
 }
 
 export default function ControlPanel({ 
-  onAddNode, 
-  onAddRange, 
   onUpdateConfig,
   currentConfig 
 }: ControlPanelProps) {
   const [config, setConfig] = useState<SimulatorConfig>(currentConfig);
+  
+  // Only apply configuration when needed, not on every change
+  const applyConfig = () => {
+    onUpdateConfig(config);
+  };
   
   const handleConfigChange = (key: keyof SimulatorConfig, value: number) => {
     // Set minimum values
@@ -40,116 +40,98 @@ export default function ControlPanel({
     setConfig(newConfig);
   };
   
-  const handleApplyConfig = () => {
-    onUpdateConfig(config);
+  // Handle Enter key press to apply changes
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      applyConfig();
+    }
   };
   
   return (
     <div className="rounded-lg p-4 shadow-md w-full" style={{ backgroundColor: 'white' }}>
       <h2 className="text-xl font-bold mb-4">Simulator Parameters</h2>
       
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div className="flex flex-col">
-          <label className="text-sm mb-1" style={{ color: '#4b5563' }}>
-            Regions
+      <div className="flex flex-wrap gap-4 items-center">
+        <div className="flex items-center gap-2">
+          <label className="text-sm whitespace-nowrap" style={{ color: '#4b5563' }}>
+            Regions:
           </label>
-          <div className="flex items-center">
-            <input
-              type="number"
-              min="1"
-              max="10"
-              value={config.regionCount}
-              onChange={(e) => handleConfigChange('regionCount', parseInt(e.target.value) || 1)}
-              className="border rounded px-2 py-1 w-full"
-              style={{ borderColor: '#d1d5db' }}
-            />
-          </div>
+          <input
+            type="number"
+            min="1"
+            max="10"
+            value={config.regionCount}
+            onChange={(e) => handleConfigChange('regionCount', parseInt(e.target.value) || 1)}
+            onBlur={applyConfig}
+            onKeyDown={handleKeyDown}
+            className="border rounded px-2 py-1 w-16"
+            style={{ borderColor: '#d1d5db' }}
+          />
         </div>
         
-        <div className="flex flex-col">
-          <label className="text-sm mb-1" style={{ color: '#4b5563' }}>
-            Replication Factor
+        <div className="flex items-center gap-2">
+          <label className="text-sm whitespace-nowrap" style={{ color: '#4b5563' }}>
+            Replication Factor:
           </label>
-          <div className="flex items-center">
-            <input
-              type="number"
-              min="1"
-              max="7"
-              value={config.replicationFactor}
-              onChange={(e) => handleConfigChange('replicationFactor', parseInt(e.target.value) || 1)}
-              className="border rounded px-2 py-1 w-full"
-              style={{ borderColor: '#d1d5db' }}
-            />
-          </div>
+          <input
+            type="number"
+            min="1"
+            max="7"
+            value={config.replicationFactor}
+            onChange={(e) => handleConfigChange('replicationFactor', parseInt(e.target.value) || 1)}
+            onBlur={applyConfig}
+            onKeyDown={handleKeyDown}
+            className="border rounded px-2 py-1 w-16" 
+            style={{ borderColor: '#d1d5db' }}
+          />
         </div>
         
-        <div className="flex flex-col">
-          <label className="text-sm mb-1" style={{ color: '#4b5563' }}>
-            Nodes
+        <div className="flex items-center gap-2">
+          <label className="text-sm whitespace-nowrap" style={{ color: '#4b5563' }}>
+            Nodes:
           </label>
-          <div className="flex items-center">
-            <input
-              type="number"
-              min="1"
-              max="30"
-              value={config.nodeCount}
-              onChange={(e) => handleConfigChange('nodeCount', parseInt(e.target.value) || 1)}
-              className="border rounded px-2 py-1 w-full"
-              style={{ borderColor: '#d1d5db' }}
-            />
-          </div>
+          <input
+            type="number"
+            min="1"
+            max="30"
+            value={config.nodeCount}
+            onChange={(e) => handleConfigChange('nodeCount', parseInt(e.target.value) || 1)}
+            onBlur={applyConfig}
+            onKeyDown={handleKeyDown}
+            className="border rounded px-2 py-1 w-16"
+            style={{ borderColor: '#d1d5db' }}
+          />
         </div>
         
-        <div className="flex flex-col">
-          <label className="text-sm mb-1" style={{ color: '#4b5563' }}>
-            Ranges
+        <div className="flex items-center gap-2">
+          <label className="text-sm whitespace-nowrap" style={{ color: '#4b5563' }}>
+            Ranges:
           </label>
-          <div className="flex items-center">
-            <input
-              type="number"
-              min="1"
-              max="30"
-              value={config.rangeCount}
-              onChange={(e) => handleConfigChange('rangeCount', parseInt(e.target.value) || 1)}
-              className="border rounded px-2 py-1 w-full"
-              style={{ borderColor: '#d1d5db' }}
-            />
-          </div>
+          <input
+            type="number"
+            min="1"
+            max="30"
+            value={config.rangeCount}
+            onChange={(e) => handleConfigChange('rangeCount', parseInt(e.target.value) || 1)}
+            onBlur={applyConfig}
+            onKeyDown={handleKeyDown}
+            className="border rounded px-2 py-1 w-16"
+            style={{ borderColor: '#d1d5db' }}
+          />
         </div>
       </div>
       
-      <div className="flex justify-between">
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={handleApplyConfig}
-          className="text-white py-2 px-4 rounded"
+      <div className="mt-3 flex items-center justify-between">
+        <div className="text-xs" style={{ color: '#6b7280' }}>
+          Press Enter or click Apply to update the simulator. Click on nodes to toggle their status.
+        </div>
+        <button
+          onClick={applyConfig}
+          className="text-white py-1 px-3 rounded text-sm"
           style={{ backgroundColor: '#059669' }}
         >
-          Apply Configuration
-        </motion.button>
-        
-        <div className="flex gap-2">
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={onAddNode}
-            className="text-white py-2 px-4 rounded"
-            style={{ backgroundColor: '#2563eb' }}
-          >
-            Add Node
-          </motion.button>
-          
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={onAddRange}
-            className="text-white py-2 px-4 rounded"
-            style={{ backgroundColor: '#9333ea' }}
-          >
-            Add Range
-          </motion.button>
-        </div>
+          Apply
+        </button>
       </div>
     </div>
   );

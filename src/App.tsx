@@ -103,8 +103,6 @@ function App() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-3 mb-4">
           <ControlPanel 
-            onAddNode={handleAddNode} 
-            onAddRange={handleAddRange}
             onUpdateConfig={handleUpdateConfig}
             currentConfig={config} 
           />
