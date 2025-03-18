@@ -93,7 +93,8 @@ function App() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2">
           <ClusterMap 
-            nodes={nodes} 
+            nodes={nodes}
+            ranges={ranges}
             onNodeClick={handleNodeClick} 
           />
         </div>

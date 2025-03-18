@@ -77,9 +77,12 @@ export class SimulatorService {
       status: newStatus
     };
     
-    // If node went offline, migrate leaseholders away from it
+    // If node went offline, migrate leaseholders and replicas away from it
     if (newStatus === 'offline') {
       this.migrateLeaseholdersFromOfflineNode(nodeId);
+    } else {
+      // If node came back online, try to rebalance some replicas to it
+      this.rebalanceToOnlineNode(nodeId);
     }
   }
   
@@ -256,5 +259,103 @@ export class SimulatorService {
     });
     
     return totalLoad;
+  }
+  
+  // Rebalance replicas to a node that has come back online
+  private rebalanceToOnlineNode(nodeId: string): void {
+    const node = this.nodes.find(n => n.id === nodeId);
+    if (!node || node.status !== 'online') return;
+    
+    // Try to rebalance some replicas to the newly online node
+    // Prioritize ranges that have fewer than 3 replicas due to node failures
+    const underReplicatedRanges = this.ranges.filter(range => 
+      // Find ranges with fewer than 3 live replicas
+      range.replicas.filter(replicaId => {
+        const replicaNode = this.nodes.find(n => n.id === replicaId);
+        return replicaNode && replicaNode.status === 'online';
+      }).length < 3
+    );
+    
+    // Rebalance under-replicated ranges first
+    underReplicatedRanges.forEach((range, index) => {
+      const onlineReplicas = range.replicas.filter(replicaId => {
+        const replicaNode = this.nodes.find(n => n.id === replicaId);
+        return replicaNode && replicaNode.status === 'online';
+      });
+      
+      // If the range already contains this node as a replica, skip
+      if (range.replicas.includes(nodeId)) return;
+      
+      // If the range has fewer than 3 online replicas, add this node
+      if (onlineReplicas.length < 3) {
+        // Keep the online replicas and add the new node
+        const newReplicas = [...onlineReplicas, nodeId];
+        
+        // If necessary, fill to 3 replicas by keeping some offline replicas
+        if (newReplicas.length < 3) {
+          const offlineReplicas = range.replicas.filter(replicaId => !onlineReplicas.includes(replicaId));
+          newReplicas.push(...offlineReplicas.slice(0, 3 - newReplicas.length));
+        }
+        
+        // Update range replicas
+        this.ranges[this.ranges.indexOf(range)] = {
+          ...range,
+          replicas: newReplicas,
+          // If there was no online leaseholder, make the new node the leaseholder
+          leaseholder: onlineReplicas.includes(range.leaseholder) ? range.leaseholder : nodeId
+        };
+      }
+    });
+    
+    // If we didn't rebalance any under-replicated ranges,
+    // try to rebalance some regular ranges to improve data distribution
+    if (underReplicatedRanges.length === 0) {
+      // Randomly select a few ranges to rebalance
+      const rangesToRebalance = this.ranges
+        .filter(range => !range.replicas.includes(nodeId))
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 2); // Only rebalance a couple ranges at a time
+        
+      rangesToRebalance.forEach(range => {
+        // Find the regions represented in this range
+        const regionCounts: Record<string, number> = {};
+        range.replicas.forEach(replicaId => {
+          const replicaNode = this.nodes.find(n => n.id === replicaId);
+          if (replicaNode) {
+            regionCounts[replicaNode.region] = (regionCounts[replicaNode.region] || 0) + 1;
+          }
+        });
+        
+        // If the new node is in a region that's underrepresented, replace a replica
+        if (regionCounts[node.region] === undefined || regionCounts[node.region] < Math.max(...Object.values(regionCounts))) {
+          // Find a replica to replace - prefer one from an overrepresented region
+          const overrepresentedRegion = Object.entries(regionCounts)
+            .sort((a, b) => b[1] - a[1]) // Sort by count descending
+            .find(([region, count]) => count > 1)?.[0];
+            
+          if (overrepresentedRegion) {
+            // Find a replica from the overrepresented region to replace
+            const replicaToReplace = range.replicas.find(replicaId => {
+              const replicaNode = this.nodes.find(n => n.id === replicaId);
+              return replicaNode && replicaNode.region === overrepresentedRegion;
+            });
+            
+            if (replicaToReplace) {
+              // Replace the replica
+              const newReplicas = range.replicas.map(replicaId => 
+                replicaId === replicaToReplace ? nodeId : replicaId
+              );
+              
+              this.ranges[this.ranges.indexOf(range)] = {
+                ...range,
+                replicas: newReplicas,
+                // If we replaced the leaseholder, update it
+                leaseholder: range.leaseholder === replicaToReplace ? nodeId : range.leaseholder
+              };
+            }
+          }
+        }
+      });
+    }
   }
 }
