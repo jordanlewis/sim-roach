@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Node, Range } from '../types';
+import { useState } from 'react';
 
 interface ClusterMapProps {
   nodes: Node[];
@@ -8,6 +9,9 @@ interface ClusterMapProps {
 }
 
 export default function ClusterMap({ nodes, ranges, onNodeClick }: ClusterMapProps) {
+  // State to track highlighted range
+  const [highlightedRangeId, setHighlightedRangeId] = useState<string | null>(null);
+  
   // Group nodes by region
   const regions = [...new Set(nodes.map(node => node.region))];
   
@@ -20,6 +24,26 @@ export default function ClusterMap({ nodes, ranges, onNodeClick }: ClusterMapPro
   const isLeaseholder = (nodeId: string, rangeId: string) => {
     const range = ranges.find(r => r.id === rangeId);
     return range ? range.leaseholder === nodeId : false;
+  };
+  
+  // Find the range object by ID
+  const getRangeById = (rangeId: string) => {
+    return ranges.find(r => r.id === rangeId);
+  };
+  
+  // Handle mouse enter on range
+  const handleRangeMouseEnter = (rangeId: string) => {
+    setHighlightedRangeId(rangeId);
+  };
+  
+  // Handle mouse leave on range
+  const handleRangeMouseLeave = () => {
+    setHighlightedRangeId(null);
+  };
+  
+  // Check if a range replica should be highlighted
+  const isHighlighted = (rangeId: string) => {
+    return highlightedRangeId === rangeId;
   };
   
   return (
@@ -86,21 +110,52 @@ export default function ClusterMap({ nodes, ranges, onNodeClick }: ClusterMapPro
                                 </div>
                                 
                                 <div className="flex flex-wrap justify-center gap-1 mt-5">
-                                  {nodeRanges.map(range => (
-                                    <div 
-                                      key={range.id}
-                                      className="w-4 h-4 rounded-sm flex items-center justify-center"
-                                      style={{ 
-                                        backgroundColor: isLeaseholder(node.id, range.id) ? '#3b82f6' : '#9ca3af',
-                                        border: range.load > 50 ? '1px solid #f97316' : 'none',
-                                      }}
-                                      title={`Range ${range.id} ${isLeaseholder(node.id, range.id) ? '(Leaseholder)' : ''} - ${range.load} RPS`}
-                                    >
-                                      <span className="text-[7px] text-white font-bold">
-                                        {range.id.replace('r', '')}
-                                      </span>
-                                    </div>
-                                  ))}
+                                  {nodeRanges.map(range => {
+                                    const isRangeHighlighted = isHighlighted(range.id);
+                                    const isLeaseHolder = isLeaseholder(node.id, range.id);
+                                    const rangeData = getRangeById(range.id);
+                                    const isHot = rangeData && rangeData.load > 50;
+                                    
+                                    return (
+                                      <motion.div 
+                                        key={range.id}
+                                        className="w-4 h-4 rounded-sm flex items-center justify-center relative"
+                                        style={{ 
+                                          backgroundColor: isLeaseHolder ? '#3b82f6' : '#9ca3af',
+                                          border: isHot ? '1px solid #f97316' : 'none',
+                                          transform: isRangeHighlighted ? 'scale(1.3)' : 'scale(1)',
+                                          zIndex: isRangeHighlighted ? 10 : 1,
+                                          transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+                                          boxShadow: isRangeHighlighted ? '0 0 5px 2px rgba(59, 130, 246, 0.5)' : 'none'
+                                        }}
+                                        title={`Range ${range.id} ${isLeaseHolder ? '(Leaseholder)' : ''} - ${rangeData?.load} RPS`}
+                                        onMouseEnter={() => handleRangeMouseEnter(range.id)}
+                                        onMouseLeave={handleRangeMouseLeave}
+                                        whileHover={{ scale: 1.3 }}
+                                      >
+                                        <span className="text-[7px] text-white font-bold">
+                                          {range.id.replace('r', '')}
+                                        </span>
+                                        
+                                        {/* Show connection lines when highlighted */}
+                                        {isRangeHighlighted && (
+                                          <div 
+                                            className="absolute rounded-full" 
+                                            style={{
+                                              top: '50%',
+                                              left: '50%',
+                                              width: '8px',
+                                              height: '8px',
+                                              backgroundColor: 'rgba(59, 130, 246, 0.3)',
+                                              boxShadow: '0 0 8px 4px rgba(59, 130, 246, 0.3)',
+                                              transform: 'translate(-50%, -50%)',
+                                              zIndex: -1
+                                            }}
+                                          />
+                                        )}
+                                      </motion.div>
+                                    );
+                                  })}
                                 </div>
                               </motion.div>
                             );
@@ -130,6 +185,18 @@ export default function ClusterMap({ nodes, ranges, onNodeClick }: ClusterMapPro
           <span className="text-xs">Hot Range</span>
         </div>
       </div>
+      
+      {/* Information about highlighted range */}
+      {highlightedRangeId && (
+        <div className="mt-2 text-center text-sm" style={{ color: '#4b5563' }}>
+          <span style={{ color: '#3b82f6', fontWeight: 'bold' }}>Range {highlightedRangeId}</span> selected
+          {' - '}
+          <span>
+            {getRangeById(highlightedRangeId)?.replicas.length} replicas 
+            {getRangeById(highlightedRangeId)?.load > 50 ? ' (Hot Range)' : ''}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
