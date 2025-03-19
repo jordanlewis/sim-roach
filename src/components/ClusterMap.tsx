@@ -229,16 +229,29 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                   <motion.h3 
                     className="text-lg font-semibold cursor-pointer inline-block"
                     style={{ color: '#1f2937' }}
-                    onClick={() => onRegionClick && onRegionClick(region)}
+                    onClick={() => {
+                      // Clear any highlighted range before toggling the region
+                      setHighlightedRangeId(null);
+                      onRegionClick && onRegionClick(region);
+                    }}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     title={`Click to toggle all nodes in ${region}`}
                   >
                     {region}
                   </motion.h3>
-                  <span className="text-xs text-gray-500 bg-gray-100 px-1 rounded">
+                  <motion.span 
+                    className="text-xs text-gray-500 bg-gray-100 px-1 rounded cursor-pointer"
+                    whileHover={{ backgroundColor: '#e5e7eb' }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => {
+                      // Clear any highlighted range before toggling the region
+                      setHighlightedRangeId(null);
+                      onRegionClick && onRegionClick(region);
+                    }}
+                  >
                     Click to toggle region
-                  </span>
+                  </motion.span>
                 </motion.div>
                 
                 <div className="flex flex-col space-y-4">
@@ -261,7 +274,11 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                                 ref={el => nodeRefs.current[node.id] = el}
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
-                                onClick={() => onNodeClick(node.id)}
+                                onClick={() => {
+                                  // Clear the highlight state before processing the click
+                                  setHighlightedRangeId(null);
+                                  onNodeClick(node.id);
+                                }}
                                 className="relative flex flex-wrap justify-center items-center cursor-pointer 
                                   shadow-md rounded-lg p-1"
                                 style={{ 
