@@ -24,14 +24,14 @@ function App() {
   
   // Handle node status toggle
   const handleNodeClick = (nodeId: string) => {
-    simulatorService.toggleNodeStatus(nodeId);
+    const result = simulatorService.toggleNodeStatus(nodeId);
     setNodes([...simulatorService.getNodes()]);
     setRanges([...simulatorService.getRanges()]);
   };
 
   // Handle region status toggle
   const handleRegionClick = (regionName: string) => {
-    simulatorService.toggleRegionStatus(regionName);
+    const result = simulatorService.toggleRegionStatus(regionName);
     setNodes([...simulatorService.getNodes()]);
     setRanges([...simulatorService.getRanges()]);
   };

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
-import { Node, Range } from '../types';
-import { useState } from 'react';
+import { Node, Range, ReplicaMovement } from '../types';
+import { useState, useEffect, useRef } from 'react';
+import ReplicaMovementAnimation from './ReplicaMovementAnimation';
 
 interface ClusterMapProps {
   nodes: Node[];
@@ -12,6 +13,17 @@ interface ClusterMapProps {
 export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }: ClusterMapProps) {
   // State to track highlighted range
   const [highlightedRangeId, setHighlightedRangeId] = useState<string | null>(null);
+  // State to track node positions for animations
+  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
+  // State to track replica movements we're animating
+  const [replicaMovements, setReplicaMovements] = useState<ReplicaMovement[]>([]);
+  // Keep track of most recent timestamp to prevent re-animating the same movement
+  const [lastMovementTimestamp, setLastMovementTimestamp] = useState<number>(0);
+  // Track which replicas are currently animating to hide them in their original positions
+  const [animatingReplicas, setAnimatingReplicas] = useState<Record<string, Set<string>>>({});
+  
+  // References to DOM elements for nodes
+  const nodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
   
   // Group nodes by region
   const regions = [...new Set(nodes.map(node => node.region))];
@@ -47,9 +59,147 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
     return highlightedRangeId === rangeId;
   };
   
+  // Update node positions when nodes or layout changes
+  useEffect(() => {
+    const updatePositions = () => {
+      const positions: Record<string, { x: number; y: number }> = {};
+      
+      // Process all node references to get their current positions
+      Object.entries(nodeRefs.current).forEach(([nodeId, element]) => {
+        if (element) {
+          const rect = element.getBoundingClientRect();
+          
+          // We need the exact center of the range area, which is a bit lower than the node center
+          // due to the node header. The ranges are in a flex container with mt-5
+          positions[nodeId] = {
+            x: window.scrollX + rect.left + rect.width / 2,
+            y: window.scrollY + rect.top + rect.height / 2 + 5
+          };
+        }
+      });
+      
+      setNodePositions(positions);
+    };
+    
+    // Update positions after all resources finish loading
+    window.addEventListener('load', updatePositions);
+    
+    // Update on scroll and resize 
+    window.addEventListener('resize', updatePositions);
+    window.addEventListener('scroll', updatePositions);
+    
+    // Initial update - with a small delay to ensure DOM is fully rendered
+    const initialTimer = setTimeout(updatePositions, 100);
+    
+    // Set an interval to keep checking positions while the component is mounted
+    // This ensures we catch any DOM updates
+    const positionCheckInterval = setInterval(updatePositions, 500);
+    
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(positionCheckInterval);
+      window.removeEventListener('resize', updatePositions);
+      window.removeEventListener('scroll', updatePositions);
+      window.removeEventListener('load', updatePositions);
+    };
+  }, [nodes, ranges]); // Re-run when nodes or ranges change
+  
+  // Extract and deduplicate recent movements from all ranges
+  useEffect(() => {
+    // Collect all movements from all ranges
+    const allMovements: ReplicaMovement[] = [];
+    ranges.forEach(range => {
+      if (range.recentMovements && range.recentMovements.length > 0) {
+        allMovements.push(...range.recentMovements);
+      }
+    });
+    
+    // Only get movements newer than what we've seen before
+    const newMovements = allMovements.filter(m => m.timestamp > lastMovementTimestamp);
+    
+    if (newMovements.length > 0) {
+      // Sort by timestamp (newest first) and take most recent 10 
+      const sortedNewMovements = [...newMovements]
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 10);
+      
+      // Update the timestamp to the most recent movement we've processed
+      const newestTimestamp = Math.max(...sortedNewMovements.map(m => m.timestamp));
+      setLastMovementTimestamp(newestTimestamp);
+      
+      // Only start animations if we have node positions
+      if (Object.keys(nodePositions).length > 0) {
+        // Update the animating replicas mapping to track which replicas are in motion
+        const newAnimatingReplicas = { ...animatingReplicas };
+        
+        sortedNewMovements.forEach(movement => {
+          // Track that this range is moving from its original node
+          if (!newAnimatingReplicas[movement.fromNodeId]) {
+            newAnimatingReplicas[movement.fromNodeId] = new Set<string>();
+          }
+          newAnimatingReplicas[movement.fromNodeId].add(movement.rangeId);
+          
+          // Also note that it's moving to a destination node
+          if (!newAnimatingReplicas[movement.toNodeId]) {
+            newAnimatingReplicas[movement.toNodeId] = new Set<string>();
+          }
+          newAnimatingReplicas[movement.toNodeId].add(movement.rangeId);
+        });
+        
+        setAnimatingReplicas(newAnimatingReplicas);
+        setReplicaMovements(sortedNewMovements);
+      }
+    }
+  }, [ranges, nodePositions, lastMovementTimestamp, animatingReplicas]);
+  
+  // Handle when an animation completes
+  const handleAnimationComplete = (completedMovement: ReplicaMovement) => {
+    // Remove from animating movements
+    setReplicaMovements(current => 
+      current.filter(m => m.timestamp !== completedMovement.timestamp)
+    );
+    
+    // Remove from tracking sets
+    setAnimatingReplicas(current => {
+      const updated = { ...current };
+      
+      // Remove tracking from source node
+      if (updated[completedMovement.fromNodeId]) {
+        updated[completedMovement.fromNodeId].delete(completedMovement.rangeId);
+        if (updated[completedMovement.fromNodeId].size === 0) {
+          delete updated[completedMovement.fromNodeId];
+        }
+      }
+      
+      // Remove tracking from destination node
+      if (updated[completedMovement.toNodeId]) {
+        updated[completedMovement.toNodeId].delete(completedMovement.rangeId);
+        if (updated[completedMovement.toNodeId].size === 0) {
+          delete updated[completedMovement.toNodeId];
+        }
+      }
+      
+      return updated;
+    });
+  };
+  
   return (
-    <div className="rounded-lg p-4 shadow-md w-full" style={{ backgroundColor: '#f3f4f6' }}>
+    <div 
+      className="rounded-lg p-4 shadow-md w-full relative" 
+      style={{ backgroundColor: '#f3f4f6' }}
+      id="cluster-map-container"
+    >
       <h2 className="text-xl font-bold mb-4">Cluster Map</h2>
+      
+      {/* Animation layer */}
+      {replicaMovements.map(movement => (
+        <ReplicaMovementAnimation
+          key={`${movement.rangeId}-${movement.fromNodeId}-${movement.toNodeId}-${movement.timestamp}`}
+          movement={movement}
+          nodePositions={nodePositions}
+          onComplete={() => handleAnimationComplete(movement)}
+        />
+      ))}
       
       <div className="w-full border border-gray-300 rounded-lg" style={{ minHeight: '500px' }}>
         <div className="grid" style={{ 
@@ -108,6 +258,7 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                             return (
                               <motion.div
                                 key={node.id}
+                                ref={el => nodeRefs.current[node.id] = el}
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
                                 onClick={() => onNodeClick(node.id)}
@@ -133,26 +284,47 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                                     const rangeData = getRangeById(range.id);
                                     const isHot = rangeData && rangeData.load > 50;
                                     
+                                    // Find if this range is being animated FROM this node
+                                    const movementFromHere = replicaMovements.find(movement => 
+                                      movement.rangeId === range.id && movement.fromNodeId === node.id
+                                    );
+                                    
+                                    // Find if this range is being animated TO this node
+                                    const movementToHere = replicaMovements.find(movement => 
+                                      movement.rangeId === range.id && movement.toNodeId === node.id
+                                    );
+                                    
+                                    // Show a placeholder in the source node, hide at destination until animation completes
+                                    const shouldRenderPlaceholder = !!movementFromHere;
+                                    const shouldHideCompletely = !!movementToHere;
+                                    
+                                    if (shouldHideCompletely) {
+                                      return null;
+                                    }
+                                    
                                     return (
                                       <motion.div 
                                         key={range.id}
                                         className="w-4 h-4 rounded-sm flex items-center justify-center relative"
                                         style={{ 
-                                          backgroundColor: isLeaseHolder ? '#3b82f6' : '#9ca3af',
+                                          backgroundColor: shouldRenderPlaceholder ? 'rgba(156, 163, 175, 0.2)' : (isLeaseHolder ? '#3b82f6' : '#9ca3af'),
                                           border: isHot ? '1px solid #f97316' : 'none',
                                           transform: isRangeHighlighted ? 'scale(1.3)' : 'scale(1)',
                                           zIndex: isRangeHighlighted ? 10 : 1,
                                           transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
-                                          boxShadow: isRangeHighlighted ? '0 0 5px 2px rgba(59, 130, 246, 0.5)' : 'none'
+                                          boxShadow: isRangeHighlighted ? '0 0 5px 2px rgba(59, 130, 246, 0.5)' : 'none',
+                                          opacity: shouldRenderPlaceholder ? 0.5 : 1
                                         }}
-                                        title={`Range ${range.id} ${isLeaseHolder ? '(Leaseholder)' : ''} - ${rangeData?.load} RPS`}
+                                        title={`Range ${range.id} ${isLeaseHolder ? '(Leaseholder)' : ''} - ${rangeData?.load} RPS${shouldRenderPlaceholder ? ' (Moving...)' : ''}`}
                                         onMouseEnter={() => handleRangeMouseEnter(range.id)}
                                         onMouseLeave={handleRangeMouseLeave}
                                         whileHover={{ scale: 1.3 }}
                                       >
-                                        <span className="text-[7px] text-white font-bold">
-                                          {range.id.replace('r', '')}
-                                        </span>
+                                        {!shouldRenderPlaceholder && (
+                                          <span className="text-[7px] text-white font-bold">
+                                            {range.id.replace('r', '')}
+                                          </span>
+                                        )}
                                         
                                         {/* Show connection lines when highlighted */}
                                         {isRangeHighlighted && (
@@ -218,6 +390,13 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
           <span className="opacity-0">Placeholder for fixed height</span>
         )}
       </div>
+      
+      {/* Show information about ongoing movements if any */}
+      {replicaMovements.length > 0 && (
+        <div className="text-xs text-blue-600 text-center mt-1">
+          Animating {replicaMovements.length} replica movement{replicaMovements.length > 1 ? 's' : ''}
+        </div>
+      )}
     </div>
   );
 }

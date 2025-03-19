@@ -355,6 +355,10 @@ export class SimulatorService {
         // Make a copy of the current replicas
         const currentReplicas = [...range.replicas];
         let newLeaseholder = range.leaseholder;
+        let leaseholderChanged = false;
+        
+        // Initialize or ensure the recentMovements array exists
+        const recentMovements = range.recentMovements || [];
         
         // 1. Handle leaseholder migration if needed
         if (range.leaseholder === nodeId) {
@@ -379,9 +383,22 @@ export class SimulatorService {
             if (differentRegionReplicas.length > 0) {
               // Choose a replica from a different region as the new leaseholder
               newLeaseholder = differentRegionReplicas[0].id;
+              leaseholderChanged = true;
             } else if (replicaNodes.length > 0) {
               // Fall back to any online replica
               newLeaseholder = replicaNodes[0].id;
+              leaseholderChanged = true;
+            }
+            
+            // Record leaseholder movement
+            if (leaseholderChanged) {
+              recentMovements.push({
+                rangeId: range.id,
+                fromNodeId: nodeId,
+                toNodeId: newLeaseholder,
+                isLeaseholder: true,
+                timestamp: Date.now()
+              });
             }
           }
         }
@@ -432,11 +449,24 @@ export class SimulatorService {
               replicaId === nodeId ? replacementNode!.id : replicaId
             );
             
+            // Record replica movement
+            recentMovements.push({
+              rangeId: range.id,
+              fromNodeId: nodeId,
+              toNodeId: replacementNode.id,
+              isLeaseholder: false,
+              timestamp: Date.now()
+            });
+            
+            // Limit the number of movements we track to prevent memory issues
+            const trimmedMovements = recentMovements.slice(-10);
+            
             // Update the range
             this.ranges[index] = {
               ...range,
               replicas: newReplicas,
-              leaseholder: newLeaseholder
+              leaseholder: newLeaseholder,
+              recentMovements: trimmedMovements
             };
           }
         } else {
@@ -444,7 +474,8 @@ export class SimulatorService {
           if (range.leaseholder === nodeId && newLeaseholder !== nodeId) {
             this.ranges[index] = {
               ...range,
-              leaseholder: newLeaseholder
+              leaseholder: newLeaseholder,
+              recentMovements: recentMovements
             };
           }
         }
