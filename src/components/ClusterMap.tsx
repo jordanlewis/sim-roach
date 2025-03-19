@@ -405,18 +405,30 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
         </div>
       </div>
       
-      <div className="mt-4 flex justify-center items-center gap-6">
-        <div className="flex items-center gap-1">
-          <div className="w-4 h-4 rounded-sm" style={{ backgroundColor: '#3b82f6' }}></div>
-          <span className="text-xs">Leaseholder</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-4 h-4 rounded-sm" style={{ backgroundColor: '#9ca3af' }}></div>
-          <span className="text-xs">Replica</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-4 h-4 rounded-sm" style={{ backgroundColor: '#9ca3af', border: '1px solid #f97316' }}></div>
-          <span className="text-xs">Hot Range</span>
+      <div className="mt-4 p-2 bg-white rounded-md shadow-sm border border-gray-200">
+        <div className="text-xs font-semibold mb-1.5 text-gray-600">Legend:</div>
+        <div className="flex justify-center items-center gap-6">
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-sm flex items-center justify-center shadow-sm" 
+                 style={{ backgroundColor: '#3b82f6' }}>
+              <span className="text-[7px] text-white font-bold">1</span>
+            </div>
+            <span className="text-xs">Leaseholder</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-sm flex items-center justify-center shadow-sm" 
+                 style={{ backgroundColor: '#9ca3af' }}>
+              <span className="text-[7px] text-white font-bold">2</span>
+            </div>
+            <span className="text-xs">Replica</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-sm flex items-center justify-center shadow-sm" 
+                 style={{ backgroundColor: '#9ca3af', border: '1px solid #f97316' }}>
+              <span className="text-[7px] text-white font-bold">3</span>
+            </div>
+            <span className="text-xs">Hot Range</span>
+          </div>
         </div>
       </div>
       
