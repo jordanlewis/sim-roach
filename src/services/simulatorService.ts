@@ -358,7 +358,7 @@ export class SimulatorService {
         let leaseholderChanged = false;
         
         // Initialize or ensure the recentMovements array exists
-        const recentMovements = range.recentMovements || [];
+        let updatedMovements = range.recentMovements || [];
         
         // 1. Handle leaseholder migration if needed
         if (range.leaseholder === nodeId) {
@@ -392,13 +392,13 @@ export class SimulatorService {
             
             // Record leaseholder movement
             if (leaseholderChanged) {
-              recentMovements.push({
-                rangeId: range.id,
-                fromNodeId: nodeId,
-                toNodeId: newLeaseholder,
-                isLeaseholder: true,
-                timestamp: Date.now()
-              });
+              updatedMovements = this.recordReplicaMovement(
+                range.id,
+                nodeId,
+                newLeaseholder,
+                true,
+                updatedMovements
+              );
             }
           }
         }
@@ -449,24 +449,21 @@ export class SimulatorService {
               replicaId === nodeId ? replacementNode!.id : replicaId
             );
             
-            // Record replica movement
-            recentMovements.push({
-              rangeId: range.id,
-              fromNodeId: nodeId,
-              toNodeId: replacementNode.id,
-              isLeaseholder: false,
-              timestamp: Date.now()
-            });
-            
-            // Limit the number of movements we track to prevent memory issues
-            const trimmedMovements = recentMovements.slice(-10);
+            // Record replica movement using our helper method
+            updatedMovements = this.recordReplicaMovement(
+              range.id,
+              nodeId,
+              replacementNode.id,
+              false,
+              updatedMovements
+            );
             
             // Update the range
             this.ranges[index] = {
               ...range,
               replicas: newReplicas,
               leaseholder: newLeaseholder,
-              recentMovements: trimmedMovements
+              recentMovements: updatedMovements
             };
           }
         } else {
@@ -475,7 +472,7 @@ export class SimulatorService {
             this.ranges[index] = {
               ...range,
               leaseholder: newLeaseholder,
-              recentMovements: recentMovements
+              recentMovements: updatedMovements
             };
           }
         }
@@ -647,6 +644,29 @@ export class SimulatorService {
     return totalLoad;
   }
   
+  // Helper method to track replica movements
+  private recordReplicaMovement(
+    rangeId: string, 
+    fromNodeId: string, 
+    toNodeId: string, 
+    isLeaseholder: boolean,
+    currentMovements: ReplicaMovement[] = []
+  ): ReplicaMovement[] {
+    const movements = [...currentMovements];
+    
+    // Record the movement
+    movements.push({
+      rangeId,
+      fromNodeId,
+      toNodeId,
+      isLeaseholder,
+      timestamp: Date.now()
+    });
+    
+    // Limit the number of movements we track to prevent memory issues
+    return movements.slice(-10);
+  }
+  
   // Rebalance replicas to a node that has come back online
   private rebalanceToOnlineNode(nodeId: string): void {
     const node = this.nodes.find(n => n.id === nodeId);
@@ -683,12 +703,55 @@ export class SimulatorService {
           newReplicas.push(...offlineReplicas.slice(0, 3 - newReplicas.length));
         }
         
+        // Find which node we're replacing - all nodes in original replicas
+        // that aren't in the new replicas list are being replaced
+        const replacedNodeIds = range.replicas.filter(id => 
+          !newReplicas.includes(id)
+        );
+        
+        // If we can identify which node's replica is being replaced
+        const recentMovements = range.recentMovements || [];
+        let updatedMovements = [...recentMovements];
+        
+        // Record movements for all nodes being replaced
+        for (const replacedNodeId of replacedNodeIds) {
+          // Make sure we're not recording movements for nodes that were already
+          // removed from the replica set due to network partitioning rather than
+          // actual replacement
+          const isRealReplacement = replacedNodeId !== nodeId;
+          
+          if (isRealReplacement) {
+            updatedMovements = this.recordReplicaMovement(
+              range.id, 
+              replacedNodeId, 
+              nodeId, 
+              false,
+              updatedMovements
+            );
+          }
+        }
+        
+        // Check if leaseholder is changing
+        const oldLeaseholder = range.leaseholder;
+        const newLeaseholder = onlineReplicas.includes(oldLeaseholder) ? oldLeaseholder : nodeId;
+        
+        // Record leaseholder movement if it's changing
+        if (oldLeaseholder !== newLeaseholder) {
+          updatedMovements = this.recordReplicaMovement(
+            range.id,
+            oldLeaseholder,
+            newLeaseholder,
+            true,
+            updatedMovements
+          );
+        }
+        
         // Update range replicas
         this.ranges[this.ranges.indexOf(range)] = {
           ...range,
           replicas: newReplicas,
-          // If there was no online leaseholder, make the new node the leaseholder
-          leaseholder: onlineReplicas.includes(range.leaseholder) ? range.leaseholder : nodeId
+          leaseholder: newLeaseholder,
+          recentMovements: updatedMovements
         };
       }
     });
@@ -732,11 +795,34 @@ export class SimulatorService {
                 replicaId === replicaToReplace ? nodeId : replicaId
               );
               
+              // Get current movements and record this movement
+              const recentMovements = range.recentMovements || [];
+              let updatedMovements = this.recordReplicaMovement(
+                range.id,
+                replicaToReplace,
+                nodeId,
+                false,
+                recentMovements
+              );
+              
+              // Check if leaseholder is changing
+              const isLeaseholderChanging = range.leaseholder === replicaToReplace;
+              if (isLeaseholderChanging) {
+                updatedMovements = this.recordReplicaMovement(
+                  range.id,
+                  replicaToReplace,
+                  nodeId,
+                  true,
+                  updatedMovements
+                );
+              }
+              
+              // Update the range
               this.ranges[this.ranges.indexOf(range)] = {
                 ...range,
                 replicas: newReplicas,
-                // If we replaced the leaseholder, update it
-                leaseholder: range.leaseholder === replicaToReplace ? nodeId : range.leaseholder
+                leaseholder: isLeaseholderChanging ? nodeId : range.leaseholder,
+                recentMovements: updatedMovements
               };
             }
           }
@@ -767,8 +853,11 @@ export class SimulatorService {
       }
     });
     
-    // If region is being marked as offline, migrate leaseholders and replicas
+    // Process the state change for each node individually
+    // This ensures consistent animation handling whether toggling individual nodes
+    // or toggling entire regions
     if (newStatus === 'offline') {
+      // If region is being marked as offline, migrate leaseholders and replicas
       regionNodes.forEach(node => {
         this.migrateLeaseholdersFromOfflineNode(node.id);
       });

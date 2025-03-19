@@ -78,7 +78,10 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
         }
       });
       
-      setNodePositions(positions);
+      // Only update if we have position data and if it's different from current
+      if (Object.keys(positions).length > 0) {
+        setNodePositions(positions);
+      }
     };
     
     // Update positions after all resources finish loading
@@ -92,8 +95,8 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
     const initialTimer = setTimeout(updatePositions, 100);
     
     // Set an interval to keep checking positions while the component is mounted
-    // This ensures we catch any DOM updates
-    const positionCheckInterval = setInterval(updatePositions, 500);
+    // This ensures we catch any DOM updates and animation glitches
+    const positionCheckInterval = setInterval(updatePositions, 300);
     
     return () => {
       clearTimeout(initialTimer);
@@ -106,6 +109,9 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
   
   // Extract and deduplicate recent movements from all ranges
   useEffect(() => {
+    // Only process when we have node positions
+    if (Object.keys(nodePositions).length === 0) return;
+    
     // Collect all movements from all ranges
     const allMovements: ReplicaMovement[] = [];
     ranges.forEach(range => {
@@ -127,43 +133,48 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
       const newestTimestamp = Math.max(...sortedNewMovements.map(m => m.timestamp));
       setLastMovementTimestamp(newestTimestamp);
       
-      // Only start animations if we have node positions
-      if (Object.keys(nodePositions).length > 0) {
-        // Update the animating replicas mapping to track which replicas are in motion
-        const newAnimatingReplicas = { ...animatingReplicas };
+      // Process movements in batches to ensure animations are coherent
+      // Update the animating replicas mapping to track which replicas are in motion
+      const newAnimatingReplicas = { ...animatingReplicas };
+      
+      // Only process movements where we have position data for both source and destination
+      const validMovements = sortedNewMovements.filter(movement => 
+        nodePositions[movement.fromNodeId] && nodePositions[movement.toNodeId]
+      );
+      
+      validMovements.forEach(movement => {
+        // Track that this range is moving from its original node
+        if (!newAnimatingReplicas[movement.fromNodeId]) {
+          newAnimatingReplicas[movement.fromNodeId] = new Set<string>();
+        }
+        newAnimatingReplicas[movement.fromNodeId].add(movement.rangeId);
         
-        sortedNewMovements.forEach(movement => {
-          // Track that this range is moving from its original node
-          if (!newAnimatingReplicas[movement.fromNodeId]) {
-            newAnimatingReplicas[movement.fromNodeId] = new Set<string>();
-          }
-          newAnimatingReplicas[movement.fromNodeId].add(movement.rangeId);
-          
-          // Also note that it's moving to a destination node
-          if (!newAnimatingReplicas[movement.toNodeId]) {
-            newAnimatingReplicas[movement.toNodeId] = new Set<string>();
-          }
-          newAnimatingReplicas[movement.toNodeId].add(movement.rangeId);
-        });
-        
-        setAnimatingReplicas(newAnimatingReplicas);
-        setReplicaMovements(sortedNewMovements);
-      }
+        // Also note that it's moving to a destination node
+        if (!newAnimatingReplicas[movement.toNodeId]) {
+          newAnimatingReplicas[movement.toNodeId] = new Set<string>();
+        }
+        newAnimatingReplicas[movement.toNodeId].add(movement.rangeId);
+      });
+      
+      setAnimatingReplicas(newAnimatingReplicas);
+      setReplicaMovements(validMovements);
     }
   }, [ranges, nodePositions, lastMovementTimestamp, animatingReplicas]);
   
-  // Handle when an animation completes
+  // Handle when an animation completes - with guaranteed cleanup
   const handleAnimationComplete = (completedMovement: ReplicaMovement) => {
-    // Remove from animating movements
-    setReplicaMovements(current => 
-      current.filter(m => m.timestamp !== completedMovement.timestamp)
-    );
+    console.log("Animation complete:", completedMovement.rangeId, completedMovement.fromNodeId, "->", completedMovement.toNodeId);
     
-    // Remove from tracking sets
+    // Ensure we remove this specific animation from the list
+    setReplicaMovements(current => {
+      return current.filter(m => m.timestamp !== completedMovement.timestamp);
+    });
+    
+    // Clean up tracking sets - use the functional update pattern for reliability
     setAnimatingReplicas(current => {
       const updated = { ...current };
       
-      // Remove tracking from source node
+      // Clean source node tracking
       if (updated[completedMovement.fromNodeId]) {
         updated[completedMovement.fromNodeId].delete(completedMovement.rangeId);
         if (updated[completedMovement.fromNodeId].size === 0) {
@@ -171,7 +182,7 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
         }
       }
       
-      // Remove tracking from destination node
+      // Clean destination node tracking
       if (updated[completedMovement.toNodeId]) {
         updated[completedMovement.toNodeId].delete(completedMovement.rangeId);
         if (updated[completedMovement.toNodeId].size === 0) {
@@ -181,6 +192,23 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
       
       return updated;
     });
+    
+    // Flash target node to show completion - if we have its position
+    const targetNodeRef = nodeRefs.current[completedMovement.toNodeId];
+    if (targetNodeRef) {
+      // Apply a quick visual effect to the target node
+      targetNodeRef.style.transition = 'box-shadow 0.3s ease-out';
+      targetNodeRef.style.boxShadow = completedMovement.isLeaseholder
+        ? '0 0 0 3px rgba(59, 130, 246, 0.5)' // Blue for leaseholder
+        : '0 0 0 3px rgba(156, 163, 175, 0.5)'; // Gray for regular replicas
+        
+      // Remove the effect after a brief period
+      setTimeout(() => {
+        if (targetNodeRef) {
+          targetNodeRef.style.boxShadow = '';
+        }
+      }, 300);
+    }
   };
   
   return (
