@@ -1,7 +1,6 @@
-import { motion } from 'framer-motion';
+import { motion, LayoutGroup } from 'framer-motion';
 import { Node, Range, ReplicaMovement } from '../types';
 import { useState, useEffect, useRef } from 'react';
-import ReplicaMovementAnimation from './ReplicaMovementAnimation';
 
 interface ClusterMapProps {
   nodes: Node[];
@@ -13,8 +12,7 @@ interface ClusterMapProps {
 export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }: ClusterMapProps) {
   // State to track highlighted range
   const [highlightedRangeId, setHighlightedRangeId] = useState<string | null>(null);
-  // State to track node positions for animations
-  const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
+  // With Framer Motion layout animations, we no longer need to track node positions
   // State to track replica movements we're animating
   const [replicaMovements, setReplicaMovements] = useState<ReplicaMovement[]>([]);
   // Keep track of most recent timestamp to prevent re-animating the same movement
@@ -59,63 +57,26 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
     return highlightedRangeId === rangeId;
   };
 
-  // Update node positions when nodes or layout changes
+  // With Framer Motion's layout animations, we don't need to track node positions
+  // as framer motion will handle the animation automatically with layoutId
   useEffect(() => {
-    const updatePositions = () => {
-      const positions: Record<string, { x: number; y: number }> = {};
-
-      // Process all node references to get their current positions
-      Object.entries(nodeRefs.current).forEach(([nodeId, element]) => {
-        if (element) {
-          const rect = element.getBoundingClientRect();
-
-          // Calculate the position of the grid container within the node
-          const rangeGridTop = rect.top + 24; // Header height
-          const rangeGridLeft = rect.left + (rect.width - 78) / 2; // Grid is 78px wide, centered
-
-          // Store the position of the top-left corner of the range grid
-          // This allows us to calculate exact positions for any range in the grid
-          positions[nodeId] = {
-            x: window.scrollX + rangeGridLeft,
-            y: window.scrollY + rangeGridTop
-          };
-        }
-      });
-
-      // Only update if we have position data and if it's different from current
-      if (Object.keys(positions).length > 0) {
-        setNodePositions(positions);
-      }
-    };
-
-    // Update positions after all resources finish loading
-    window.addEventListener('load', updatePositions);
-
-    // Update on scroll and resize 
-    window.addEventListener('resize', updatePositions);
-    window.addEventListener('scroll', updatePositions);
-
-    // Initial update - with a small delay to ensure DOM is fully rendered
-    const initialTimer = setTimeout(updatePositions, 100);
-
-    // Set an interval to keep checking positions while the component is mounted
-    // This ensures we catch any DOM updates and animation glitches
-    const positionCheckInterval = setInterval(updatePositions, 300);
-
+    // With Framer Motion layout animations, we don't need position tracking
+    // The framework will handle all the animations automatically
+    
     return () => {
-      clearTimeout(initialTimer);
-      clearInterval(positionCheckInterval);
-      window.removeEventListener('resize', updatePositions);
-      window.removeEventListener('scroll', updatePositions);
-      window.removeEventListener('load', updatePositions);
+      // No event listeners to clean up
     };
   }, [nodes, ranges]); // Re-run when nodes or ranges change
+  
+  // Configure layout animation transition settings
+  const layoutTransition = {
+    type: "spring",
+    stiffness: 350,
+    damping: 25
+  };
 
   // Extract and deduplicate recent movements from all ranges
   useEffect(() => {
-    // Only process when we have node positions
-    if (Object.keys(nodePositions).length === 0) return;
-
     // Collect all movements from all ranges
     const allMovements: ReplicaMovement[] = [];
     ranges.forEach(range => {
@@ -141,12 +102,8 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
       // Update the animating replicas mapping to track which replicas are in motion
       const newAnimatingReplicas = { ...animatingReplicas };
 
-      // Only process movements where we have position data for both source and destination
-      const validMovements = sortedNewMovements.filter(movement =>
-        nodePositions[movement.fromNodeId] && nodePositions[movement.toNodeId]
-      );
-
-      validMovements.forEach(movement => {
+      // Process all movements - with layout animations we don't need to check positions
+      sortedNewMovements.forEach(movement => {
         // Track that this range is moving from its original node
         if (!newAnimatingReplicas[movement.fromNodeId]) {
           newAnimatingReplicas[movement.fromNodeId] = new Set<string>();
@@ -161,9 +118,9 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
       });
 
       setAnimatingReplicas(newAnimatingReplicas);
-      setReplicaMovements(validMovements);
+      setReplicaMovements(sortedNewMovements);
     }
-  }, [ranges, nodePositions, lastMovementTimestamp, animatingReplicas]);
+  }, [ranges, lastMovementTimestamp, animatingReplicas]);
 
   // Handle when an animation completes - with guaranteed cleanup
   const handleAnimationComplete = (completedMovement: ReplicaMovement) => {
@@ -216,22 +173,16 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
   };
 
   return (
-    <div
-      className="rounded-lg p-4 shadow-md w-full relative"
-      style={{ backgroundColor: '#f3f4f6' }}
-      id="cluster-map-container"
-    >
+    <LayoutGroup>
+      <div
+        className="rounded-lg p-4 shadow-md w-full relative"
+        style={{ backgroundColor: '#f3f4f6' }}
+        id="cluster-map-container"
+      >
       <h2 className="text-xl font-bold mb-4">Cluster Map</h2>
 
-      {/* Animation layer */}
-      {replicaMovements.map(movement => (
-        <ReplicaMovementAnimation
-          key={`${movement.rangeId}-${movement.fromNodeId}-${movement.toNodeId}-${movement.timestamp}`}
-          movement={movement}
-          nodePositions={nodePositions}
-          onComplete={() => handleAnimationComplete(movement)}
-        />
-      ))}
+      {/* We're now using Framer Motion's layout animations instead of custom animations */}
+      {/* The layoutId system takes care of animating between nodes */}
 
       <div className="w-full border border-gray-300 rounded-lg" style={{ minHeight: '600px' }}>
 
@@ -388,26 +339,31 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                       movement.rangeId === range.id && movement.toNodeId === node.id
                                     );
 
-                                    // When a range is moving FROM this node, show a transparent placeholder
-                                    // When a range is moving TO this node, hide it completely until animation completes
-                                    // This allows the animation to show exactly where ranges come from and go to
-                                    const shouldRenderPlaceholder = !!movementFromHere;
-                                    const shouldHideCompletely = !!movementToHere;
-
-                                    if (shouldHideCompletely) {
-                                      return null;
-                                    }
+                                    // Check if this range is being animated (either coming from or going to a node)
+                                    // We'll use Framer Motion's layout animations to handle the transitions
+                                    const isAnimating = !!movementFromHere || !!movementToHere;
+                                    
+                                    // If the range is being animated FROM this node, we'll keep it in place
+                                    // with reduced opacity. If it's animating TO this node, we'll still
+                                    // render it (with layoutId) but make it invisible initially
+                                    const isSource = !!movementFromHere;
+                                    const isDestination = !!movementToHere;
 
                                     return (
                                       <motion.div
+                                        // Use layoutId for Framer Motion to track and animate between states
+                                        layoutId={isAnimating ? `range-${range.id}-animation` : undefined}
                                         key={range.id}
+                                        layout
+                                        layoutDependency={isAnimating}
+                                        layoutTransition={layoutTransition}
                                         className="rounded-sm flex items-center justify-center relative"
                                         style={{
                                           width: '20px', 
                                           height: '20px', 
                                           flexShrink: 0,
                                           padding: '2px',
-                                          backgroundColor: shouldRenderPlaceholder ? 'rgba(156, 163, 175, 0.2)' : (isLeaseHolder ? '#3b82f6' : '#9ca3af'),
+                                          backgroundColor: isSource ? 'rgba(156, 163, 175, 0.2)' : (isLeaseHolder ? '#3b82f6' : '#9ca3af'),
                                           border: isHot 
                                             ? '2px solid #f97316' 
                                             : isRangeHighlighted 
@@ -416,9 +372,15 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                           zIndex: isRangeHighlighted ? 10 : 1,
                                           transition: 'border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
                                           boxShadow: isRangeHighlighted ? '0 0 5px 1px rgba(59, 130, 246, 0.5)' : 'none',
-                                          opacity: shouldRenderPlaceholder ? 0.5 : 1
+                                          opacity: isSource ? 0.2 : (isDestination ? 0 : 1)
                                         }}
-                                        title={`Range ${range.id} ${isLeaseHolder ? '(Leaseholder)' : ''} - ${rangeData?.load} RPS${shouldRenderPlaceholder ? ' (Moving...)' : ''}`}
+                                        // Handle completion when destination range finishes its entrance animation
+                                        onLayoutAnimationComplete={() => {
+                                          if (isDestination && movementToHere) {
+                                            handleAnimationComplete(movementToHere);
+                                          }
+                                        }}
+                                        title={`Range ${range.id} ${isLeaseHolder ? '(Leaseholder)' : ''} - ${rangeData?.load} RPS${isSource ? ' (Moving...)' : ''}`}
                                         onMouseEnter={() => handleRangeMouseEnter(range.id)}
                                         onMouseLeave={handleRangeMouseLeave}
                                         whileHover={{
@@ -558,5 +520,6 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
         </div>
       </div>
     </div>
+    </LayoutGroup>
   );
 }
