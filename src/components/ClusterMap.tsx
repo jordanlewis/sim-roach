@@ -313,7 +313,7 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                             return (
                               <motion.div
                                 key={node.id}
-                                ref={el => nodeRefs.current[node.id] = el}
+                                ref={(el) => { nodeRefs.current[node.id] = el }}
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
                                 onClick={() => {
@@ -487,8 +487,8 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
             <span style={{ color: '#3b82f6', fontWeight: 'bold' }}>Range {highlightedRangeId}</span> selected
             {' - '}
             <span>
-              {getRangeById(highlightedRangeId)?.replicas.length} replicas
-              {getRangeById(highlightedRangeId)?.load > 50 ? ' (Hot Range)' : ''}
+              {getRangeById(highlightedRangeId)?.replicas?.length ?? 0} replicas
+              {(getRangeById(highlightedRangeId)?.load ?? 0) > 50 ? ' (Hot Range)' : ''}
             </span>
           </>
         ) : (

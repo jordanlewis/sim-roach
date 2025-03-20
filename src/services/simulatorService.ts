@@ -24,9 +24,19 @@ const availableRegions = [
 ];
 
 // Helper functions
-const getRandomElement = <T>(array: T[]): T => {
+function getRandomElement<T>(array: T[]): T {
   return array[Math.floor(Math.random() * array.length)];
-};
+}
+
+// Function to get a random region
+function getRandomRegion(): string {
+  return getRandomElement(availableRegions).name;
+}
+
+// Function to get a random zone
+function getRandomZone(): string {
+  return getRandomElement(['a', 'b', 'c']);
+}
 
 // Main simulator service
 export class SimulatorService {
@@ -761,8 +771,8 @@ export class SimulatorService {
     fromNodeId: string, 
     toNodeId: string, 
     isLeaseholder: boolean,
-    currentMovements: ReplicaMovement[] = []
-  ): ReplicaMovement[] {
+    currentMovements: Array<import('../types').ReplicaMovement> = []
+  ): Array<import('../types').ReplicaMovement> {
     const movements = [...currentMovements];
     
     // Record the movement

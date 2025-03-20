@@ -24,18 +24,19 @@ function App() {
   
   // Handle node status toggle
   const handleNodeClick = (nodeId: string) => {
-    const result = simulatorService.toggleNodeStatus(nodeId);
+    simulatorService.toggleNodeStatus(nodeId);
     setNodes([...simulatorService.getNodes()]);
     setRanges([...simulatorService.getRanges()]);
   };
 
   // Handle region status toggle
   const handleRegionClick = (regionName: string) => {
-    const result = simulatorService.toggleRegionStatus(regionName);
+    simulatorService.toggleRegionStatus(regionName);
     setNodes([...simulatorService.getNodes()]);
     setRanges([...simulatorService.getRanges()]);
   };
   
+  /* Uncomment if needed in the future
   // Handle adding a new node
   const handleAddNode = () => {
     simulatorService.addNode();
@@ -52,6 +53,7 @@ function App() {
       alert(error instanceof Error ? error.message : 'Failed to add range');
     }
   };
+  */
   
   // Handle marking range as hot
   const handleMarkRangeHot = (rangeId: string) => {
