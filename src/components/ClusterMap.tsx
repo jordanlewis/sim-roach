@@ -77,11 +77,17 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
     };
   }, [nodes, ranges, animatingReplicas]); // Re-run when nodes or ranges change
   
-  // Configure layout animation transition settings
+  // Configure layout animation transition settings - carefully tuned for smooth animations
   const layoutTransition = {
-    type: "spring",
-    stiffness: 350,
-    damping: 25
+    type: "tween", // Use tween for predictable, smooth motion
+    ease: "easeInOut",
+    duration: 0.4 // Moderate duration for clear but not distracting animations
+  };
+  
+  // Define an instant transition for static ranges - no animation for non-moving replicas
+  const staticTransition = {
+    duration: 0,
+    delay: 0
   };
 
   // Extract and deduplicate recent movements from all ranges
@@ -148,8 +154,12 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
 
       // Only update state if we actually made changes
       if (needToUpdateAnimatingReplicas) {
-        console.log("Updating animatingReplicas with new movements");
+        console.log("Updating animatingReplicas with new movements:", 
+          sortedNewMovements.map(m => `${m.rangeId}: ${m.fromNodeId}->${m.toNodeId}`).join(', '));
         setAnimatingReplicas(newAnimatingReplicas);
+      } else if (sortedNewMovements.length > 0) {
+        console.log("Found movements but none needed tracking updates:", 
+          sortedNewMovements.map(m => `${m.rangeId}: ${m.fromNodeId}->${m.toNodeId}`).join(', '));
       }
       setReplicaMovements(sortedNewMovements);
     }
@@ -399,12 +409,14 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
 
                                     return (
                                       <motion.div
-                                        // Use layoutId for Framer Motion to track and animate between states
-                                        layoutId={isAnimating ? `range-${range.id}-animation` : undefined}
+                                        // Use unique layoutId for each range-node combination
+                                        layoutId={`range-${range.id}-node-${node.id}`}
                                         key={range.id}
                                         layout
-                                        layoutDependency={isAnimating}
-                                        layoutTransition={layoutTransition}
+                                        // More comprehensive dependencies to ensure animations trigger correctly
+                                        layoutDependency={[range.id, node.id, isAnimating, !!animatingReplicas[node.id]?.has(range.id)]}
+                                        // Use appropriate transition based on whether this replica is actually moving
+                                        layoutTransition={isAnimating ? layoutTransition : staticTransition}
                                         className="rounded-sm flex items-center justify-center relative"
                                         style={{
                                           width: '20px', 
