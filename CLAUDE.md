@@ -55,6 +55,9 @@ npm run typecheck
 - Replica rebalancing when nodes go offline
 - Range visualization with leaseholder highlighting
 - Hot range marking
+- Node load visualization with heatmap coloring
+- Load balancing for replica placement
+- Animated replica movements with path indicators
 
 ## Important Notes
 - Keep this file updated as the project evolves
@@ -62,4 +65,29 @@ npm run typecheck
 - Update features list when new features are added
 
 ## Recently Implemented Features
-- Region failure capability: Click a region name to toggle all nodes in that region between online and offline states
+- Node load visualization: Each node shows replica count with heatmap coloring (white = low, yellow = medium, orange = high)
+- Load balancing: The simulator now balances replicas both by diversity across regions/zones and by node load
+- Replica movement animations: Visual animations show replicas moving between nodes during failures and rebalancing
+
+## Key Implementation Details
+
+### SimulatorService Core Methods
+- `selectNodesForReplicas`: Places replicas with diversity and load balancing
+- `migrateLeaseholdersFromOfflineNode`: Handles node failures and replica migration
+- `rebalanceToOnlineNode`: Rebalances when nodes come back online
+- `toggleRegionStatus`: Handles region-level failures
+- `calculateNodeReplicaCounts`: Tracks load across the cluster
+
+### Animation System
+- `ReplicaMovementAnimation.tsx`: Handles animations of replica movements
+- Uses vector calculations for proper motion direction
+- Animates with Framer Motion with particles and path effects
+- Tracks movements with timestamps for deduplication
+
+### Load Balancing
+Replica placement follows these priorities:
+1. Maximum region diversity (replicas in different regions)
+2. Maximum zone diversity (replicas in different zones within regions)
+3. Load balancing (nodes with fewest replicas preferred)
+
+The `selectLeastLoadedNode` method is used to find optimal replacement nodes when failures occur.
