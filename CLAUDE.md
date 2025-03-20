@@ -23,9 +23,6 @@ npm run preview
 ```bash
 # Run ESLint
 npm run lint
-
-# Type check
-npm run typecheck
 ```
 
 ## Code Style Preferences
