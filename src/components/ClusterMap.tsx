@@ -62,6 +62,9 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
     // This safety mechanism ensures animation state is reset when configuration changes drastically
     // For example, when toggling a node from offline to online or vice versa
     
+    // Track last state change time to reset animations that get stuck
+    const stateChangeTimestamp = Date.now();
+    
     // Clear animation tracking state after a short delay to allow new animations to be set up
     const timer = setTimeout(() => {
       // Check if we have any stuck animations - they should clear within 2 seconds
@@ -72,10 +75,23 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
       }
     }, 2000);
     
+    // More aggressive cleanup for longer-running animations
+    const extendedTimer = setTimeout(() => {
+      // If we still have animations after 5 seconds, forcibly reset everything
+      if (Object.keys(animatingReplicas).length > 0 || replicaMovements.length > 0) {
+        console.log("Force cleanup of stalled animations after 5 seconds");
+        setAnimatingReplicas({});
+        setReplicaMovements([]);
+        // Reset the last movement timestamp to ensure new movements are detected
+        setLastMovementTimestamp(stateChangeTimestamp);
+      }
+    }, 5000);
+    
     return () => {
       clearTimeout(timer);
+      clearTimeout(extendedTimer);
     };
-  }, [nodes, ranges, animatingReplicas]); // Re-run when nodes or ranges change
+  }, [nodes, ranges, replicaMovements, animatingReplicas]); // Re-run when nodes, ranges or animation state changes
   
   // Configure layout animation transition settings - carefully tuned for smooth animations
   const layoutTransition = {
@@ -92,6 +108,9 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
 
   // Extract and deduplicate recent movements from all ranges
   useEffect(() => {
+    // Track when this effect runs to help with debugging
+    console.log("Checking for new movements...");
+    
     // Clear animating replicas if there are no movements in progress
     // This helps recover from any stuck animation state
     if (replicaMovements.length === 0 && Object.keys(animatingReplicas).length > 0) {
@@ -107,28 +126,39 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
         allMovements.push(...range.recentMovements);
       }
     });
+    
+    // Skip processing if there are no movements
+    if (allMovements.length === 0) return;
 
     // Only get movements newer than what we've seen before
     const newMovements = allMovements.filter(m => m.timestamp > lastMovementTimestamp);
+    
+    if (newMovements.length === 0) return;
+    
+    console.log(`Found ${newMovements.length} new movements to process`);
 
-    if (newMovements.length > 0) {
-      // Sort by timestamp (newest first) and take most recent 10 
-      const sortedNewMovements = [...newMovements]
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 10);
+    // Sort by timestamp (newest first) and take most recent 10 
+    const sortedNewMovements = [...newMovements]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 10);
 
-      // Update the timestamp to the most recent movement we've processed
-      const newestTimestamp = Math.max(...sortedNewMovements.map(m => m.timestamp));
-      setLastMovementTimestamp(newestTimestamp);
+    // Update the timestamp to the most recent movement we've processed
+    const newestTimestamp = Math.max(...sortedNewMovements.map(m => m.timestamp));
+    
+    // Create a fresh tracking object for new movements
+    const newAnimatingReplicas = { ...animatingReplicas };
+    let needToUpdateAnimatingReplicas = false;
 
-      // Create a fresh tracking object for new movements
-      const newAnimatingReplicas = { ...animatingReplicas };
-      let needToUpdateAnimatingReplicas = false;
-
-      // Process all movements - with layout animations we don't need to check positions
-      sortedNewMovements.forEach(movement => {
-        // Process ALL movements, including to/from offline nodes
-        
+    // Process all movements - with layout animations we don't need to check positions
+    sortedNewMovements.forEach(movement => {
+      // Skip redundant movements - if we're already animating this range for this node
+      const isAlreadyAnimatingFromSource = 
+        newAnimatingReplicas[movement.fromNodeId]?.has(movement.rangeId);
+      const isAlreadyAnimatingToTarget = 
+        newAnimatingReplicas[movement.toNodeId]?.has(movement.rangeId);
+      
+      // Only process if we're not already tracking this movement 
+      if (!isAlreadyAnimatingFromSource || !isAlreadyAnimatingToTarget) {
         // Track that this range is moving from its original node
         if (!newAnimatingReplicas[movement.fromNodeId]) {
           newAnimatingReplicas[movement.fromNodeId] = new Set<string>();
@@ -150,18 +180,40 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
           newAnimatingReplicas[movement.toNodeId].add(movement.rangeId);
           needToUpdateAnimatingReplicas = true;
         }
-      });
-
-      // Only update state if we actually made changes
-      if (needToUpdateAnimatingReplicas) {
-        console.log("Updating animatingReplicas with new movements:", 
-          sortedNewMovements.map(m => `${m.rangeId}: ${m.fromNodeId}->${m.toNodeId}`).join(', '));
-        setAnimatingReplicas(newAnimatingReplicas);
-      } else if (sortedNewMovements.length > 0) {
-        console.log("Found movements but none needed tracking updates:", 
-          sortedNewMovements.map(m => `${m.rangeId}: ${m.fromNodeId}->${m.toNodeId}`).join(', '));
       }
-      setReplicaMovements(sortedNewMovements);
+    });
+
+    // Only update state if we actually made changes
+    if (needToUpdateAnimatingReplicas) {
+      console.log("Updating animatingReplicas with new movements:", 
+        sortedNewMovements.map(m => `${m.rangeId}: ${m.fromNodeId}->${m.toNodeId}`).join(', '));
+      setAnimatingReplicas(newAnimatingReplicas);
+      
+      // Update movements state in same batch to ensure proper synchronization
+      setReplicaMovements(current => {
+        // Combine existing movements with new ones, removing duplicates
+        const existingIds = new Set(current.map(m => `${m.rangeId}-${m.timestamp}`));
+        const combined = [...current];
+        
+        // Add only movements we don't already have
+        for (const movement of sortedNewMovements) {
+          const id = `${movement.rangeId}-${movement.timestamp}`;
+          if (!existingIds.has(id)) {
+            combined.push(movement);
+          }
+        }
+        
+        return combined;
+      });
+      
+      // Update timestamp last to avoid race conditions
+      setLastMovementTimestamp(newestTimestamp);
+    } else if (sortedNewMovements.length > 0) {
+      console.log("Found movements but none needed tracking updates:", 
+        sortedNewMovements.map(m => `${m.rangeId}: ${m.fromNodeId}->${m.toNodeId}`).join(', '));
+      
+      // Still update the timestamp to avoid processing these again
+      setLastMovementTimestamp(newestTimestamp);
     }
   }, [ranges, nodes, lastMovementTimestamp, animatingReplicas, replicaMovements]);
 
@@ -174,63 +226,101 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
       current.filter(m => m.timestamp !== completedMovement.timestamp)
     );
 
-    // Use a short timeout to ensure React has a chance to process the state update
-    // before we modify the animatingReplicas state - this helps prevent race conditions
-    setTimeout(() => {
-      console.log("Cleaning up animatingReplicas for", completedMovement.rangeId);
+    // Create a queued cleanup to ensure state is properly updated in sequence
+    // This two-phase cleanup helps prevent race conditions in React state updates
+    
+    // Phase 1: Remove from animatingReplicas immediately
+    setAnimatingReplicas(current => {
+      // Create a brand new object to ensure React detects the change
+      const updated = {...current};
       
-      // Clean up tracking sets - use the functional update pattern for reliability
+      // Clean up the source node tracking
+      if (updated[completedMovement.fromNodeId]) {
+        const newSourceSet = new Set(updated[completedMovement.fromNodeId]);
+        newSourceSet.delete(completedMovement.rangeId);
+        
+        if (newSourceSet.size > 0) {
+          updated[completedMovement.fromNodeId] = newSourceSet;
+        } else {
+          delete updated[completedMovement.fromNodeId];
+        }
+      }
+      
+      // Clean up the destination node tracking
+      if (updated[completedMovement.toNodeId]) {
+        const newDestSet = new Set(updated[completedMovement.toNodeId]);
+        newDestSet.delete(completedMovement.rangeId);
+        
+        if (newDestSet.size > 0) {
+          updated[completedMovement.toNodeId] = newDestSet;
+        } else {
+          delete updated[completedMovement.toNodeId];
+        }
+      }
+      
+      return updated;
+    });
+    
+    // Phase 2: Add a visual effect to show the completion
+    // Use requestAnimationFrame to ensure DOM updates have time to process
+    requestAnimationFrame(() => {
+      // Flash target node to show completion - if we have its position
+      const targetNodeRef = nodeRefs.current[completedMovement.toNodeId];
+      if (targetNodeRef) {
+        // Apply a quick visual effect to the target node
+        targetNodeRef.style.transition = 'box-shadow 0.3s ease-out';
+        targetNodeRef.style.boxShadow = completedMovement.isLeaseholder
+          ? '0 0 0 3px rgba(59, 130, 246, 0.5)' // Blue for leaseholder
+          : '0 0 0 3px rgba(156, 163, 175, 0.5)'; // Gray for regular replicas
+
+        // Remove the effect after a brief period
+        setTimeout(() => {
+          if (targetNodeRef) {
+            targetNodeRef.style.boxShadow = '';
+          }
+        }, 300);
+      }
+    });
+    
+    // Phase 3: Final verification of cleanup
+    // Use a slightly delayed check to ensure any animations that should have completed 
+    // but didn't report completion are properly cleaned up
+    setTimeout(() => {
       setAnimatingReplicas(current => {
-        // Create a brand new object to ensure React detects the change
+        // Check if we still have any entries for this range
+        let needsCleanup = false;
+        
+        for (const [, rangeSet] of Object.entries(current)) {
+          if (rangeSet.has(completedMovement.rangeId)) {
+            needsCleanup = true;
+            break;
+          }
+        }
+        
+        // If no cleanup needed, return unchanged
+        if (!needsCleanup) return current;
+        
+        // Otherwise do a full cleanup
+        console.log("Final cleanup for range", completedMovement.rangeId);
         const updated = {};
         
-        // Copy all entries except the one we're cleaning up
         for (const [nodeId, rangeSet] of Object.entries(current)) {
-          // We need to manually recreate each Set
           const newRangeSet = new Set<string>();
           
-          // Only copy ranges that aren't the one that just completed animation
           rangeSet.forEach(rangeId => {
-            if (!(
-              (nodeId === completedMovement.fromNodeId || nodeId === completedMovement.toNodeId) && 
-              rangeId === completedMovement.rangeId
-            )) {
+            if (rangeId !== completedMovement.rangeId) {
               newRangeSet.add(rangeId);
             }
           });
           
-          // Only keep the node entry if it still has ranges to animate
           if (newRangeSet.size > 0) {
             updated[nodeId] = newRangeSet;
           }
         }
         
-        console.log("Updated animatingReplicas:", 
-          Object.entries(updated).map(([nodeId, rangeSet]) => 
-            `${nodeId}: ${Array.from(rangeSet as Set<string>).join(', ')}`
-          ).join(' | ')
-        );
-        
         return updated;
       });
-    }, 10); // Tiny delay to ensure state updates are processed in the right order
-
-    // Flash target node to show completion - if we have its position
-    const targetNodeRef = nodeRefs.current[completedMovement.toNodeId];
-    if (targetNodeRef) {
-      // Apply a quick visual effect to the target node
-      targetNodeRef.style.transition = 'box-shadow 0.3s ease-out';
-      targetNodeRef.style.boxShadow = completedMovement.isLeaseholder
-        ? '0 0 0 3px rgba(59, 130, 246, 0.5)' // Blue for leaseholder
-        : '0 0 0 3px rgba(156, 163, 175, 0.5)'; // Gray for regular replicas
-
-      // Remove the effect after a brief period
-      setTimeout(() => {
-        if (targetNodeRef) {
-          targetNodeRef.style.boxShadow = '';
-        }
-      }, 300);
-    }
+    }, 100);
   };
 
   return (
@@ -409,13 +499,22 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
 
                                     return (
                                       <motion.div
-                                        // Use unique layoutId for each range-node combination
-                                        layoutId={`range-${range.id}-node-${node.id}`}
-                                        key={range.id}
+                                        // Use a stable position-based ID that doesn't change as replicas move between nodes
+                                        // This ensures animations track properly across node boundaries
+                                        layoutId={`replica-${range.id}-${rangeData?.replicas.indexOf(node.id)}`}
+                                        key={`${node.id}-${range.id}`}
                                         layout
-                                        // More comprehensive dependencies to ensure animations trigger correctly
-                                        layoutDependency={[range.id, node.id, isAnimating, !!animatingReplicas[node.id]?.has(range.id)]}
-                                        // Use appropriate transition based on whether this replica is actually moving
+                                        // Expanded dependencies to capture all state changes that affect layout
+                                        layoutDependency={[
+                                          range.id, 
+                                          node.id, 
+                                          isAnimating, 
+                                          !!animatingReplicas[node.id]?.has(range.id),
+                                          node.status,
+                                          // Include leaseholder status to ensure proper updates
+                                          isLeaseHolder
+                                        ]}
+                                        // Different transitions based on animation state
                                         layoutTransition={isAnimating ? layoutTransition : staticTransition}
                                         className="rounded-sm flex items-center justify-center relative"
                                         style={{
@@ -429,14 +528,16 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                             : isRangeHighlighted 
                                               ? '2px solid rgba(59, 130, 246, 0.8)' 
                                               : 'none',
-                                          zIndex: isRangeHighlighted ? 10 : 1,
+                                          zIndex: isRangeHighlighted ? 10 : (isAnimating ? 5 : 1),
                                           transition: 'border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
-                                          boxShadow: isRangeHighlighted ? '0 0 5px 1px rgba(59, 130, 246, 0.5)' : 'none'
+                                          boxShadow: isRangeHighlighted ? '0 0 5px 1px rgba(59, 130, 246, 0.5)' : 'none',
+                                          // Add subtle opacity change for animating replicas
+                                          opacity: isAnimating ? 0.95 : 1
                                         }}
-                                        // Handle completion when any animation involving this range completes
+                                        // Handle animation completion with proper cleanup
                                         onLayoutAnimationComplete={() => {
-                                          // Always clean up animations to ensure ranges appear properly
                                           if (isAnimating) {
+                                            // Ensure we clean up both from and to animations
                                             if (movementFromHere) {
                                               handleAnimationComplete(movementFromHere);
                                             }
