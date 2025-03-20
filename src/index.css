@@ -3,6 +3,11 @@
 @tailwind utilities;
 
 @layer base {
+  /* Global box-sizing rule to ensure predictable sizes */
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+  
   body {
     background-color: #f3f4f6;
     color: #111827;
@@ -26,6 +31,8 @@
   align-items: center;
   justify-content: center;
   position: relative;
+  box-sizing: border-box;
+  border: 2px solid transparent; /* Always have a border to prevent layout shifts on hover */
   transition: border-color 0.15s ease-out, box-shadow 0.15s ease-out !important;
 }
 
@@ -41,12 +48,12 @@
 
 /* Hot range styling */
 .replica-hot {
-  border: 2px solid #f97316;
+  border-color: #f97316;
 }
 
 /* Highlighted range styling */
 .replica-highlighted {
-  border: 2px solid rgba(59, 130, 246, 0.8);
+  border-color: rgba(59, 130, 246, 0.8);
   box-shadow: 0 0 5px 1px rgba(59, 130, 246, 0.5);
   z-index: 10;
 }
@@ -60,12 +67,12 @@
 /* Hover styles - only apply when not animating */
 .replica:not(.replica-animating):hover {
   box-shadow: 0 0 5px 2px rgba(59, 130, 246, 0.6);
-  border: 2px solid rgba(59, 130, 246, 0.8);
+  border-color: rgba(59, 130, 246, 0.8);
 }
 
 /* Hot range hover style */
 .replica-hot:hover {
-  border: 2px solid #f97316 !important;
+  border-color: #f97316 !important;
 }
 
 /* Node styling */
@@ -82,6 +89,7 @@
   padding: 0.25rem;
   margin-bottom: 0.5rem;
   transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+  box-sizing: border-box;
 }
 
 .node-container:hover {
