@@ -229,12 +229,12 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
         />
       ))}
 
-      <div className="w-full border border-gray-300 rounded-lg" style={{ minHeight: '500px' }}>
+      <div className="w-full border border-gray-300 rounded-lg" style={{ minHeight: '600px' }}>
 
-        <div className="grid" style={{
+        <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '1rem',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+          gap: '1.5rem',
           padding: '1rem'
         }}>
           {regions.map(region => {
@@ -251,7 +251,11 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                 className="border rounded-lg p-3"
                 style={{
                   borderColor: allNodesOffline ? '#ef4444' : (hasOfflineNodes ? '#f97316' : '#d1d5db'),
-                  backgroundColor: allNodesOffline ? 'rgba(254, 202, 202, 0.3)' : 'rgba(255, 255, 255, 0.7)'
+                  backgroundColor: allNodesOffline ? 'rgba(254, 202, 202, 0.3)' : 'rgba(255, 255, 255, 0.7)',
+                  minHeight: '320px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden'
                 }}
               >
                 <motion.div className="flex items-center space-x-1 mb-3">
@@ -261,7 +265,7 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                     onClick={() => {
                       // Clear any highlighted range before toggling the region
                       setHighlightedRangeId(null);
-                      onRegionClick && onRegionClick(region);
+                      if (onRegionClick) onRegionClick(region);
                     }}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
@@ -276,24 +280,33 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                     onClick={() => {
                       // Clear any highlighted range before toggling the region
                       setHighlightedRangeId(null);
-                      onRegionClick && onRegionClick(region);
+                      if (onRegionClick) onRegionClick(region);
                     }}
                   >
                     Click to toggle region
                   </motion.span>
                 </motion.div>
 
-                <div className="flex flex-col space-y-4">
+                <div style={{ 
+                  display: 'flex', 
+                  flexDirection: 'row', 
+                  gap: '1rem', 
+                  flexWrap: 'nowrap',
+                  overflowX: 'auto',
+                  marginTop: '1rem',
+                  flex: '1',
+                  paddingBottom: '0.5rem'
+                }}>
                   {zones.map(zone => {
                     const zoneNodes = regionNodes.filter(node => node.zone === zone);
 
                     return (
-                      <div key={zone} className="border-t pt-2" style={{ borderColor: '#e5e7eb' }}>
+                      <div key={zone} className="border-l pl-2" style={{ borderColor: '#e5e7eb', flex: '0 0 auto', minWidth: '110px', maxWidth: '200px' }}>
                         <div className="text-sm font-medium mb-2" style={{ color: '#4b5563' }}>
                           Zone: {zone}
                         </div>
 
-                        <div className="flex flex-wrap gap-3">
+                        <div className="flex flex-col gap-3">
                           {zoneNodes.map(node => {
                             const nodeRanges = getRangesForNode(node.id);
 
@@ -313,6 +326,7 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                                 style={{
                                   width: '80px',
                                   height: '80px',
+                                  marginBottom: '0.5rem',
                                   backgroundColor: node.status === 'online' 
                                     ? nodeRanges.length > 5 
                                       ? 'rgba(254, 215, 170, 0.7)' // Orange tint for heavily loaded nodes
