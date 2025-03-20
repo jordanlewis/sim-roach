@@ -535,7 +535,7 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                         onMouseEnter={() => handleRangeMouseEnter(range.id)}
                                         onMouseLeave={handleRangeMouseLeave}
                                       >
-                                        <span className="text-[7px] text-white font-bold">
+                                        <span className="text-[7px] text-white font-bold absolute-center">
                                           {range.id.replace('r', '')}
                                         </span>
 
