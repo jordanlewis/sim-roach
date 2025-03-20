@@ -121,11 +121,7 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
 
       // Process all movements - with layout animations we don't need to check positions
       sortedNewMovements.forEach(movement => {
-        // Skip movements to or from offline nodes - they won't animate correctly
-        const fromNode = nodes.find(n => n.id === movement.fromNodeId);
-        const toNode = nodes.find(n => n.id === movement.toNodeId);
-        
-        if (!fromNode || !toNode) return; // Skip if nodes don't exist
+        // Process ALL movements, including to/from offline nodes
         
         // Track that this range is moving from its original node
         if (!newAnimatingReplicas[movement.fromNodeId]) {
