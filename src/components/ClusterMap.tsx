@@ -335,13 +335,17 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
       {/* We're now using Framer Motion's layout animations instead of custom animations */}
       {/* The layoutId system takes care of animating between nodes */}
 
-      <div className="w-full border border-gray-300 rounded-lg" style={{ minHeight: '600px' }}>
+      <div className="w-full border border-gray-300 rounded-lg" style={{ 
+        minHeight: '600px',
+        overflow: 'visible' // Critical for cross-region animations
+      }}>
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
           gap: '1.5rem',
-          padding: '1rem'
+          padding: '1rem',
+          overflow: 'visible' // Ensure animations can cross region boundaries
         }}>
           {regions.map(region => {
             const regionNodes = nodes.filter(node => node.region === region);
@@ -361,7 +365,7 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                   minHeight: '320px',
                   display: 'flex',
                   flexDirection: 'column',
-                  overflow: 'hidden',
+                  overflow: 'visible',
                   padding: '0.75rem 1rem'
                 }}
               >
@@ -398,8 +402,7 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                   display: 'flex', 
                   flexDirection: 'row', 
                   gap: '1rem', 
-                  flexWrap: 'nowrap',
-                  overflowX: 'auto',
+                  flexWrap: 'wrap', // Changed from nowrap to allow zones to wrap
                   marginTop: '1rem',
                   flex: '1',
                   padding: '0.5rem 0.75rem 0.75rem 0.5rem',
@@ -411,9 +414,10 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                     return (
                       <div key={zone} className="border-l pl-3" style={{ 
                         borderColor: '#e5e7eb', 
-                        flex: '0 0 auto', 
+                        flex: '0 1 auto', 
                         minWidth: '110px', 
                         maxWidth: '200px',
+                        margin: '0 0 0.75rem 0',
                         padding: '0 0.5rem 0 0'
                       }}>
                         <div className="text-sm font-medium mb-2" style={{ color: '#4b5563' }}>
