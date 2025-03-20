@@ -333,8 +333,6 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                                   shadow-md rounded-lg p-1"
                                 style={{
                                   width: '80px',
-                                  height: '80px',
-                                  marginBottom: '0.5rem',
                                   backgroundColor: node.status === 'online' 
                                     ? nodeRanges.length > 5 
                                       ? 'rgba(254, 215, 170, 0.7)' // Orange tint for heavily loaded nodes
@@ -342,7 +340,14 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                                         ? 'rgba(254, 240, 138, 0.5)' // Yellow tint for moderately loaded nodes
                                         : 'white'
                                     : '#fecaca', // Red background for offline nodes
-                                  border: `2px solid ${node.status === 'online' ? '#22c55e' : '#ef4444'}`
+                                  border: `2px solid ${node.status === 'online' ? '#22c55e' : '#ef4444'}`,
+                                  marginBottom: '0.5rem',
+                                  // Precise calculation of height based on grid layout:
+                                  // 1. Header height: 24px (text + padding)
+                                  // 2. Margin top for ranges: 20px
+                                  // 3. Grid rows × (Range height (20px) + gap (6px))
+                                  // 4. Bottom padding: 8px
+                                  height: `${24 + 20 + (Math.ceil(nodeRanges.length / 3) * (20 + 6)) - 6 + 8}px`
                                 }}
                                 title={`Node ${node.id} (${node.status}) - ${nodeRanges.length} replicas
 ${nodeRanges.filter(r => isLeaseholder(node.id, r.id)).length} leaseholders
@@ -354,7 +359,15 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                   {node.id} <span className="text-[9px]">({nodeRanges.length})</span>
                                 </div>
 
-                                <div className="flex flex-wrap justify-center gap-1 mt-5">
+                                <div style={{ 
+                                  display: 'grid',
+                                  gridTemplateColumns: 'repeat(3, 20px)',
+                                  gap: '6px',
+                                  width: '78px',
+                                  marginTop: '20px',
+                                  paddingBottom: '6px',
+                                  justifyContent: 'center'
+                                }}>
                                   {nodeRanges.map(range => {
                                     const isRangeHighlighted = isHighlighted(range.id);
                                     const isLeaseHolder = isLeaseholder(node.id, range.id);
@@ -382,8 +395,12 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                     return (
                                       <motion.div
                                         key={range.id}
-                                        className="w-4 h-4 rounded-sm flex items-center justify-center relative"
+                                        className="rounded-sm flex items-center justify-center relative"
                                         style={{
+                                          width: '20px', 
+                                          height: '20px', 
+                                          flexShrink: 0,
+                                          padding: '2px',
                                           backgroundColor: shouldRenderPlaceholder ? 'rgba(156, 163, 175, 0.2)' : (isLeaseHolder ? '#3b82f6' : '#9ca3af'),
                                           border: isHot 
                                             ? '2px solid #f97316' 
