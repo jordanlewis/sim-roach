@@ -96,8 +96,10 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
   // Configure layout animation transition settings - carefully tuned for smooth animations
   const layoutTransition = {
     type: "tween", // Use tween for predictable, smooth motion
-    ease: "easeInOut",
-    duration: 0.4 // Moderate duration for clear but not distracting animations
+    ease: "easeOut", // Change to easeOut for more natural acceleration/deceleration
+    duration: 0.35, // Slightly faster for better responsiveness
+    // Add delay to stagger animations and reduce the processing load
+    delay: 0.02
   };
   
   // Define an instant transition for static ranges - no animation for non-moving replicas
@@ -369,25 +371,20 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                   padding: '0.75rem 1rem'
                 }}
               >
-                <motion.div className="flex items-center space-x-1 mb-3">
-                  <motion.h3
-                    className="text-lg font-semibold cursor-pointer inline-block"
-                    style={{ color: '#1f2937' }}
+                <div className="flex items-center space-x-1 mb-3">
+                  <h3
+                    className="region-heading"
                     onClick={() => {
                       // Clear any highlighted range before toggling the region
                       setHighlightedRangeId(null);
                       if (onRegionClick) onRegionClick(region);
                     }}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
                     title={`Click to toggle all nodes in ${region}`}
                   >
                     {region}
-                  </motion.h3>
-                  <motion.span
-                    className="text-xs text-gray-500 bg-gray-100 px-1 rounded cursor-pointer"
-                    whileHover={{ backgroundColor: '#e5e7eb' }}
-                    whileTap={{ scale: 0.95 }}
+                  </h3>
+                  <span
+                    className="text-xs text-gray-500 bg-gray-100 hover:bg-gray-200 px-1 rounded cursor-pointer transition-colors duration-200"
                     onClick={() => {
                       // Clear any highlighted range before toggling the region
                       setHighlightedRangeId(null);
@@ -395,8 +392,8 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                     }}
                   >
                     Click to toggle region
-                  </motion.span>
-                </motion.div>
+                  </span>
+                </div>
 
                 <div style={{ 
                   display: 'flex', 
@@ -429,20 +426,16 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                             const nodeRanges = getRangesForNode(node.id);
 
                             return (
-                              <motion.div
+                              <div
                                 key={node.id}
                                 ref={(el) => { nodeRefs.current[node.id] = el }}
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
                                 onClick={() => {
                                   // Clear the highlight state before processing the click
                                   setHighlightedRangeId(null);
                                   onNodeClick(node.id);
                                 }}
-                                className="relative flex flex-wrap justify-center items-center cursor-pointer 
-                                  shadow-md rounded-lg p-1"
+                                className="node-container"
                                 style={{
-                                  width: '80px',
                                   backgroundColor: node.status === 'online' 
                                     ? nodeRanges.length > 5 
                                       ? 'rgba(254, 215, 170, 0.7)' // Orange tint for heavily loaded nodes
@@ -451,7 +444,6 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                                         : 'white'
                                     : '#fecaca', // Red background for offline nodes
                                   border: `2px solid ${node.status === 'online' ? '#22c55e' : '#ef4444'}`,
-                                  marginBottom: '0.5rem',
                                   // Precise calculation of height based on grid layout:
                                   // 1. Header height: 24px (text + padding)
                                   // 2. Margin top for ranges: 20px
@@ -520,24 +512,13 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                         ]}
                                         // Different transitions based on animation state
                                         layoutTransition={isAnimating ? layoutTransition : staticTransition}
-                                        className="rounded-sm flex items-center justify-center relative"
-                                        style={{
-                                          width: '20px', 
-                                          height: '20px', 
-                                          flexShrink: 0,
-                                          padding: '2px',
-                                          backgroundColor: isLeaseHolder ? '#3b82f6' : '#9ca3af',
-                                          border: isHot 
-                                            ? '2px solid #f97316' 
-                                            : isRangeHighlighted 
-                                              ? '2px solid rgba(59, 130, 246, 0.8)' 
-                                              : 'none',
-                                          zIndex: isRangeHighlighted ? 10 : (isAnimating ? 5 : 1),
-                                          transition: 'border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
-                                          boxShadow: isRangeHighlighted ? '0 0 5px 1px rgba(59, 130, 246, 0.5)' : 'none',
-                                          // Add subtle opacity change for animating replicas
-                                          opacity: isAnimating ? 0.95 : 1
-                                        }}
+                                        className={`
+                                          replica
+                                          ${isLeaseHolder ? 'replica-leaseholder' : 'replica-normal'}
+                                          ${isHot ? 'replica-hot' : ''}
+                                          ${isRangeHighlighted ? 'replica-highlighted' : ''}
+                                          ${isAnimating ? 'replica-animating' : ''}
+                                        `}
                                         // Handle animation completion with proper cleanup
                                         onLayoutAnimationComplete={() => {
                                           if (isAnimating) {
@@ -553,10 +534,6 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                         title={`Range ${range.id} ${isLeaseHolder ? '(Leaseholder)' : ''} - ${rangeData?.load} RPS`}
                                         onMouseEnter={() => handleRangeMouseEnter(range.id)}
                                         onMouseLeave={handleRangeMouseLeave}
-                                        whileHover={{
-                                          boxShadow: '0 0 5px 2px rgba(59, 130, 246, 0.6)',
-                                          border: isHot ? '2px solid #f97316' : '2px solid rgba(59, 130, 246, 0.8)'
-                                        }}
                                       >
                                         <span className="text-[7px] text-white font-bold">
                                           {range.id.replace('r', '')}
@@ -574,7 +551,8 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                               backgroundColor: 'rgba(59, 130, 246, 0.3)',
                                               boxShadow: '0 0 8px 4px rgba(59, 130, 246, 0.3)',
                                               transform: 'translate(-50%, -50%)',
-                                              zIndex: -1
+                                              zIndex: -1,
+                                              pointerEvents: 'none' // Ensure it doesn't interfere with hover
                                             }}
                                           />
                                         )}
@@ -582,7 +560,7 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                     );
                                   })}
                                 </div>
-                              </motion.div>
+                              </div>
                             );
                           })}
                         </div>

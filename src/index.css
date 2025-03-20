@@ -14,3 +14,99 @@
     color: white;
   }
 }
+
+/* Replica styling */
+.replica {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: 0.125rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: border-color 0.15s ease-out, box-shadow 0.15s ease-out !important;
+}
+
+/* Normal range replica */
+.replica-normal {
+  background-color: #9ca3af;
+}
+
+/* Leaseholder replica */
+.replica-leaseholder {
+  background-color: #3b82f6;
+}
+
+/* Hot range styling */
+.replica-hot {
+  border: 2px solid #f97316;
+}
+
+/* Highlighted range styling */
+.replica-highlighted {
+  border: 2px solid rgba(59, 130, 246, 0.8);
+  box-shadow: 0 0 5px 1px rgba(59, 130, 246, 0.5);
+  z-index: 10;
+}
+
+/* Animating replica */
+.replica-animating {
+  opacity: 0.95;
+  z-index: 5;
+}
+
+/* Hover styles - only apply when not animating */
+.replica:not(.replica-animating):hover {
+  box-shadow: 0 0 5px 2px rgba(59, 130, 246, 0.6);
+  border: 2px solid rgba(59, 130, 246, 0.8);
+}
+
+/* Hot range hover style */
+.replica-hot:hover {
+  border: 2px solid #f97316 !important;
+}
+
+/* Node styling */
+.node-container {
+  width: 80px;
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  padding: 0.25rem;
+  margin-bottom: 0.5rem;
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+.node-container:hover {
+  transform: scale(1.05);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.node-container:active {
+  transform: scale(0.95);
+}
+
+/* Region heading styling */
+.region-heading {
+  color: #1f2937;
+  font-size: 1.125rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-block;
+  transition: transform 0.2s ease-out;
+}
+
+.region-heading:hover {
+  transform: scale(1.05);
+}
+
+.region-heading:active {
+  transform: scale(0.95);
+}
