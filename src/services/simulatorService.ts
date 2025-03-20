@@ -199,9 +199,45 @@ export class SimulatorService {
     return newRange;
   }
   
-  // Select nodes for replicas using advanced placement rules
+  // Calculate the number of replicas currently on each node
+  private calculateNodeReplicaCounts(): Map<string, number> {
+    const replicaCounts = new Map<string, number>();
+    
+    // Initialize all nodes with 0 replicas
+    this.nodes.forEach(node => {
+      replicaCounts.set(node.id, 0);
+    });
+    
+    // Count replicas for each node
+    this.ranges.forEach(range => {
+      range.replicas.forEach(nodeId => {
+        const currentCount = replicaCounts.get(nodeId) || 0;
+        replicaCounts.set(nodeId, currentCount + 1);
+      });
+    });
+    
+    return replicaCounts;
+  }
+  
+  // Helper to select the node with the fewest replicas from a list of nodes
+  private selectLeastLoadedNode(nodes: Node[], replicaCounts: Map<string, number>): Node {
+    // Sort nodes by replica count (ascending)
+    const sortedNodes = [...nodes].sort((a, b) => {
+      const countA = replicaCounts.get(a.id) || 0;
+      const countB = replicaCounts.get(b.id) || 0;
+      return countA - countB;
+    });
+    
+    // Return the node with the fewest replicas
+    return sortedNodes[0];
+  }
+
+  // Select nodes for replicas using advanced placement rules with load balancing
   private selectNodesForReplicas(availableNodes: Node[], replicationFactor: number): Node[] {
-    // 1. Classify nodes by region and zone
+    // 1. Get the current replica counts for load balancing
+    const replicaCounts = this.calculateNodeReplicaCounts();
+    
+    // 2. Classify nodes by region and zone
     const nodesByRegion: Record<string, Record<string, Node[]>> = {};
     const allRegions = new Set<string>();
     const allZones: Record<string, Set<string>> = {};
@@ -229,60 +265,115 @@ export class SimulatorService {
     const usedRegions = new Set<string>();
     const usedZones = new Set<string>(); // Format: "region/zone"
     
-    // 2. Maximum region diversity - select one node from each region
+    // 3. Maximum region diversity - select one node from each region
     if (allRegions.size >= replicationFactor) {
       // We have enough regions to place each replica in a different region
       const shuffledRegions = [...allRegions].sort(() => 0.5 - Math.random());
       
       for (const region of shuffledRegions.slice(0, replicationFactor)) {
-        // For each region, select one zone at random
+        // For each region, select one zone based on load balance
         const zonesInRegion = [...allZones[region]];
-        const randomZone = zonesInRegion[Math.floor(Math.random() * zonesInRegion.length)];
         
-        // Get a random node from this region/zone
-        const nodesInZone = nodesByRegion[region][randomZone];
-        const selectedNode = nodesInZone[Math.floor(Math.random() * nodesInZone.length)];
+        // Balance replicas across zones by selecting the least loaded zone
+        let leastLoadedNode: Node | null = null;
+        let leastLoadedNodeZone: string | null = null;
         
-        selectedNodes.push(selectedNode);
-        usedRegions.add(region);
-        usedZones.add(`${region}/${randomZone}`);
+        for (const zone of zonesInRegion) {
+          const nodesInZone = nodesByRegion[region][zone];
+          // Find the least loaded node in this zone
+          const leastLoadedNodeInZone = this.selectLeastLoadedNode(nodesInZone, replicaCounts);
+          const leastLoadedCount = replicaCounts.get(leastLoadedNodeInZone.id) || 0;
+          
+          // Check if this is the least loaded node we've seen so far
+          if (leastLoadedNode === null || 
+              (replicaCounts.get(leastLoadedNode.id) || 0) > leastLoadedCount) {
+            leastLoadedNode = leastLoadedNodeInZone;
+            leastLoadedNodeZone = zone;
+          }
+        }
+        
+        // If we found a node, use it
+        if (leastLoadedNode && leastLoadedNodeZone) {
+          selectedNodes.push(leastLoadedNode);
+          usedRegions.add(region);
+          usedZones.add(`${region}/${leastLoadedNodeZone}`);
+          
+          // Update replica count to reflect this placement
+          replicaCounts.set(leastLoadedNode.id, (replicaCounts.get(leastLoadedNode.id) || 0) + 1);
+        }
         
         if (selectedNodes.length === replicationFactor) break;
       }
     } else {
-      // 3. Not enough regions - maximize region diversity, then zone diversity
+      // 4. Not enough regions - maximize region diversity, then zone diversity, with load balancing
       
       // First, add one node from each available region
       for (const region of allRegions) {
         // Try to use different zones in each region
         const zonesInRegion = [...allZones[region]];
         let selectedZone = null;
+        let selectedNode = null;
         
-        // Select a zone we haven't used yet if possible
-        for (const zone of zonesInRegion) {
-          if (!usedZones.has(`${region}/${zone}`)) {
-            selectedZone = zone;
-            break;
+        // Select the least loaded node from unused zones
+        const unusedZones = zonesInRegion.filter(zone => !usedZones.has(`${region}/${zone}`));
+        
+        if (unusedZones.length > 0) {
+          // Find the least loaded node across all unused zones
+          let leastLoadedNode: Node | null = null;
+          let leastLoadedNodeZone: string | null = null;
+          
+          for (const zone of unusedZones) {
+            const nodesInZone = nodesByRegion[region][zone];
+            const leastLoadedNodeInZone = this.selectLeastLoadedNode(nodesInZone, replicaCounts);
+            const leastLoadedCount = replicaCounts.get(leastLoadedNodeInZone.id) || 0;
+            
+            if (leastLoadedNode === null || 
+                (replicaCounts.get(leastLoadedNode.id) || 0) > leastLoadedCount) {
+              leastLoadedNode = leastLoadedNodeInZone;
+              leastLoadedNodeZone = zone;
+            }
+          }
+          
+          if (leastLoadedNode && leastLoadedNodeZone) {
+            selectedNode = leastLoadedNode;
+            selectedZone = leastLoadedNodeZone;
+          }
+        } else {
+          // If all zones are used, select the least loaded node across all zones
+          let leastLoadedNode: Node | null = null;
+          let leastLoadedNodeZone: string | null = null;
+          
+          for (const zone of zonesInRegion) {
+            const nodesInZone = nodesByRegion[region][zone];
+            const leastLoadedNodeInZone = this.selectLeastLoadedNode(nodesInZone, replicaCounts);
+            const leastLoadedCount = replicaCounts.get(leastLoadedNodeInZone.id) || 0;
+            
+            if (leastLoadedNode === null || 
+                (replicaCounts.get(leastLoadedNode.id) || 0) > leastLoadedCount) {
+              leastLoadedNode = leastLoadedNodeInZone;
+              leastLoadedNodeZone = zone;
+            }
+          }
+          
+          if (leastLoadedNode && leastLoadedNodeZone) {
+            selectedNode = leastLoadedNode;
+            selectedZone = leastLoadedNodeZone;
           }
         }
         
-        // If all zones in this region are used, just pick one at random
-        if (selectedZone === null) {
-          selectedZone = zonesInRegion[Math.floor(Math.random() * zonesInRegion.length)];
+        if (selectedNode && selectedZone) {
+          selectedNodes.push(selectedNode);
+          usedRegions.add(region);
+          usedZones.add(`${region}/${selectedZone}`);
+          
+          // Update replica count
+          replicaCounts.set(selectedNode.id, (replicaCounts.get(selectedNode.id) || 0) + 1);
+          
+          if (selectedNodes.length === replicationFactor) break;
         }
-        
-        // Get a random node from this region/zone
-        const nodesInZone = nodesByRegion[region][selectedZone];
-        const selectedNode = nodesInZone[Math.floor(Math.random() * nodesInZone.length)];
-        
-        selectedNodes.push(selectedNode);
-        usedRegions.add(region);
-        usedZones.add(`${region}/${selectedZone}`);
-        
-        if (selectedNodes.length === replicationFactor) break;
       }
       
-      // 4. Still need more nodes - maximize zone diversity within used regions
+      // 5. Still need more nodes - maximize zone diversity within used regions, with load balancing
       if (selectedNodes.length < replicationFactor) {
         // For each region, try to use all available zones before reusing
         const regionsToConsider = [...usedRegions].sort(() => 0.5 - Math.random());
@@ -295,10 +386,14 @@ export class SimulatorService {
             if (!usedZones.has(`${region}/${zone}`)) {
               const nodesInZone = nodesByRegion[region][zone];
               if (nodesInZone.length > 0) {
-                const selectedNode = nodesInZone[Math.floor(Math.random() * nodesInZone.length)];
+                // Select the least loaded node in this zone
+                const leastLoadedNode = this.selectLeastLoadedNode(nodesInZone, replicaCounts);
                 
-                selectedNodes.push(selectedNode);
+                selectedNodes.push(leastLoadedNode);
                 usedZones.add(`${region}/${zone}`);
+                
+                // Update replica count
+                replicaCounts.set(leastLoadedNode.id, (replicaCounts.get(leastLoadedNode.id) || 0) + 1);
                 
                 if (selectedNodes.length === replicationFactor) break;
               }
@@ -309,18 +404,29 @@ export class SimulatorService {
         }
       }
       
-      // 5. Last resort - just add nodes from any region/zone
+      // 6. Last resort - just add nodes from any region/zone, using load balancing
       if (selectedNodes.length < replicationFactor) {
         // Filter out nodes we've already selected
         const remainingNodes = availableNodes.filter(node => 
           !selectedNodes.some(selected => selected.id === node.id)
         );
         
-        // Randomly select from remaining nodes
-        const shuffledRemaining = [...remainingNodes].sort(() => 0.5 - Math.random());
-        selectedNodes.push(
-          ...shuffledRemaining.slice(0, replicationFactor - selectedNodes.length)
-        );
+        // Sort remaining nodes by replica count and take the least loaded ones
+        const sortedNodes = [...remainingNodes].sort((a, b) => {
+          const countA = replicaCounts.get(a.id) || 0;
+          const countB = replicaCounts.get(b.id) || 0;
+          return countA - countB;
+        });
+        
+        // Take as many as needed
+        const additionalNodes = sortedNodes.slice(0, replicationFactor - selectedNodes.length);
+        
+        // Update replica counts for the selected nodes
+        additionalNodes.forEach(node => {
+          replicaCounts.set(node.id, (replicaCounts.get(node.id) || 0) + 1);
+        });
+        
+        selectedNodes.push(...additionalNodes);
       }
     }
     
@@ -419,6 +525,9 @@ export class SimulatorService {
           const existingRegions = new Set(existingReplicaNodes.map(node => node.region));
           const existingZones = new Set(existingReplicaNodes.map(node => `${node.region}/${node.zone}`));
           
+          // Calculate replica counts for load balancing
+          const replicaCounts = this.calculateNodeReplicaCounts();
+          
           // Try to find an optimal replacement node
           let replacementNode: Node | undefined;
           
@@ -428,7 +537,8 @@ export class SimulatorService {
           );
           
           if (nodesInNewRegions.length > 0) {
-            replacementNode = nodesInNewRegions[0];
+            // Select the least loaded node from the new regions
+            replacementNode = this.selectLeastLoadedNode(nodesInNewRegions, replicaCounts);
           } else {
             // Next, try to find a node in a zone we don't already have
             const nodesInNewZones = availableReplaceNodes.filter(node => 
@@ -436,10 +546,11 @@ export class SimulatorService {
             );
             
             if (nodesInNewZones.length > 0) {
-              replacementNode = nodesInNewZones[0];
+              // Select the least loaded node from the new zones
+              replacementNode = this.selectLeastLoadedNode(nodesInNewZones, replicaCounts);
             } else {
-              // Finally, just use any available node
-              replacementNode = availableReplaceNodes[0];
+              // Finally, just use the least loaded available node
+              replacementNode = this.selectLeastLoadedNode(availableReplaceNodes, replicaCounts);
             }
           }
           
@@ -672,18 +783,21 @@ export class SimulatorService {
     const node = this.nodes.find(n => n.id === nodeId);
     if (!node || node.status !== 'online') return;
     
+    // Calculate current replica counts for load balancing
+    const replicaCounts = this.calculateNodeReplicaCounts();
+    
     // Try to rebalance some replicas to the newly online node
-    // Prioritize ranges that have fewer than 3 replicas due to node failures
+    // Prioritize ranges that have fewer than replicationFactor replicas due to node failures
     const underReplicatedRanges = this.ranges.filter(range => 
-      // Find ranges with fewer than 3 live replicas
+      // Find ranges with fewer than replicationFactor live replicas
       range.replicas.filter(replicaId => {
         const replicaNode = this.nodes.find(n => n.id === replicaId);
         return replicaNode && replicaNode.status === 'online';
-      }).length < 3
+      }).length < this.config.replicationFactor
     );
     
     // Rebalance under-replicated ranges first
-    underReplicatedRanges.forEach((range, index) => {
+    underReplicatedRanges.forEach((range) => {
       const onlineReplicas = range.replicas.filter(replicaId => {
         const replicaNode = this.nodes.find(n => n.id === replicaId);
         return replicaNode && replicaNode.status === 'online';
@@ -692,15 +806,15 @@ export class SimulatorService {
       // If the range already contains this node as a replica, skip
       if (range.replicas.includes(nodeId)) return;
       
-      // If the range has fewer than 3 online replicas, add this node
-      if (onlineReplicas.length < 3) {
+      // If the range has fewer than replicationFactor online replicas, add this node
+      if (onlineReplicas.length < this.config.replicationFactor) {
         // Keep the online replicas and add the new node
         const newReplicas = [...onlineReplicas, nodeId];
         
-        // If necessary, fill to 3 replicas by keeping some offline replicas
-        if (newReplicas.length < 3) {
+        // If necessary, fill to replicationFactor replicas by keeping some offline replicas
+        if (newReplicas.length < this.config.replicationFactor) {
           const offlineReplicas = range.replicas.filter(replicaId => !onlineReplicas.includes(replicaId));
-          newReplicas.push(...offlineReplicas.slice(0, 3 - newReplicas.length));
+          newReplicas.push(...offlineReplicas.slice(0, this.config.replicationFactor - newReplicas.length));
         }
         
         // Find which node we're replacing - all nodes in original replicas
@@ -753,80 +867,131 @@ export class SimulatorService {
           leaseholder: newLeaseholder,
           recentMovements: updatedMovements
         };
+        
+        // Update our replica count tracking
+        replicaCounts.set(nodeId, (replicaCounts.get(nodeId) || 0) + 1);
+        replacedNodeIds.forEach(id => {
+          if (id !== nodeId && replicaCounts.has(id)) {
+            replicaCounts.set(id, Math.max(0, (replicaCounts.get(id) || 0) - 1));
+          }
+        });
       }
     });
     
     // If we didn't rebalance any under-replicated ranges,
     // try to rebalance some regular ranges to improve data distribution
     if (underReplicatedRanges.length === 0) {
-      // Randomly select a few ranges to rebalance
-      const rangesToRebalance = this.ranges
-        .filter(range => !range.replicas.includes(nodeId))
-        .sort(() => 0.5 - Math.random())
-        .slice(0, 2); // Only rebalance a couple ranges at a time
-        
+      // Identify nodes that are overloaded compared to our newly online node
+      const onlineNodes = this.nodes.filter(n => n.status === 'online');
+      const overloadedNodes = onlineNodes.filter(n => 
+        n.id !== nodeId && 
+        (replicaCounts.get(n.id) || 0) > (replicaCounts.get(nodeId) || 0) + 1
+      );
+      
+      // If there are no overloaded nodes, there's no need to rebalance
+      if (overloadedNodes.length === 0) return;
+      
+      // Sort nodes by replica count (descending) to prioritize the most overloaded
+      overloadedNodes.sort((a, b) => 
+        (replicaCounts.get(b.id) || 0) - (replicaCounts.get(a.id) || 0)
+      );
+      
+      // Identify ranges that have replicas on overloaded nodes but not on our new node
+      const candidateRanges = this.ranges.filter(range => 
+        !range.replicas.includes(nodeId) &&
+        range.replicas.some(replicaId => 
+          overloadedNodes.some(node => node.id === replicaId)
+        )
+      );
+      
+      // Select a limited number of ranges to rebalance
+      const maxRangesToRebalance = Math.min(3, Math.ceil(candidateRanges.length / 4));
+      const rangesToRebalance = candidateRanges
+        .sort(() => 0.5 - Math.random()) // Shuffle to avoid predictable patterns
+        .slice(0, maxRangesToRebalance);
+      
+      // Process each range to be rebalanced
       rangesToRebalance.forEach(range => {
-        // Find the regions represented in this range
+        // Collect information about replica distribution by region and zone
         const regionCounts: Record<string, number> = {};
-        range.replicas.forEach(replicaId => {
-          const replicaNode = this.nodes.find(n => n.id === replicaId);
-          if (replicaNode) {
-            regionCounts[replicaNode.region] = (regionCounts[replicaNode.region] || 0) + 1;
-          }
+        const zoneKeys: Set<string> = new Set(); // Format: "region/zone"
+        const replicaNodes = range.replicas
+          .map(id => this.nodes.find(n => n.id === id))
+          .filter((n): n is Node => !!n);
+        
+        // Count replicas by region and track zone usage
+        replicaNodes.forEach(n => {
+          regionCounts[n.region] = (regionCounts[n.region] || 0) + 1;
+          zoneKeys.add(`${n.region}/${n.zone}`);
         });
         
-        // If the new node is in a region that's underrepresented, replace a replica
-        if (regionCounts[node.region] === undefined || regionCounts[node.region] < Math.max(...Object.values(regionCounts))) {
-          // Find a replica to replace - prefer one from an overrepresented region
-          const overrepresentedRegion = Object.entries(regionCounts)
-            .sort((a, b) => b[1] - a[1]) // Sort by count descending
-            .find(([region, count]) => count > 1)?.[0];
-            
-          if (overrepresentedRegion) {
-            // Find a replica from the overrepresented region to replace
-            const replicaToReplace = range.replicas.find(replicaId => {
-              const replicaNode = this.nodes.find(n => n.id === replicaId);
-              return replicaNode && replicaNode.region === overrepresentedRegion;
-            });
-            
-            if (replicaToReplace) {
-              // Replace the replica
-              const newReplicas = range.replicas.map(replicaId => 
-                replicaId === replicaToReplace ? nodeId : replicaId
-              );
-              
-              // Get current movements and record this movement
-              const recentMovements = range.recentMovements || [];
-              let updatedMovements = this.recordReplicaMovement(
-                range.id,
-                replicaToReplace,
-                nodeId,
-                false,
-                recentMovements
-              );
-              
-              // Check if leaseholder is changing
-              const isLeaseholderChanging = range.leaseholder === replicaToReplace;
-              if (isLeaseholderChanging) {
-                updatedMovements = this.recordReplicaMovement(
-                  range.id,
-                  replicaToReplace,
-                  nodeId,
-                  true,
-                  updatedMovements
-                );
-              }
-              
-              // Update the range
-              this.ranges[this.ranges.indexOf(range)] = {
-                ...range,
-                replicas: newReplicas,
-                leaseholder: isLeaseholderChanging ? nodeId : range.leaseholder,
-                recentMovements: updatedMovements
-              };
-            }
-          }
+        // Find the replica to replace based on these criteria:
+        // 1. From an overloaded node
+        // 2. Preferably from an overrepresented region
+        // 3. Preferably not a leaseholder
+        const overloadedReplicas = range.replicas.filter(replicaId => 
+          overloadedNodes.some(node => node.id === replicaId)
+        );
+        
+        if (overloadedReplicas.length === 0) return; // Safety check
+        
+        // Sort by priority: overrepresented region first, then not leaseholder
+        let replicaToReplace = overloadedReplicas[0]; // Default
+        
+        // Find replicas in overrepresented regions
+        const overrepRegionReplicas = overloadedReplicas.filter(replicaId => {
+          const replicaNode = this.nodes.find(n => n.id === replicaId);
+          return replicaNode && regionCounts[replicaNode.region] > 1;
+        });
+        
+        if (overrepRegionReplicas.length > 0) {
+          // Try to find a non-leaseholder in an overrepresented region
+          const nonLeaseholderReplica = overrepRegionReplicas.find(id => id !== range.leaseholder);
+          replicaToReplace = nonLeaseholderReplica || overrepRegionReplicas[0];
+        } else {
+          // If no overrepresented regions, prefer non-leaseholder
+          const nonLeaseholderReplica = overloadedReplicas.find(id => id !== range.leaseholder);
+          replicaToReplace = nonLeaseholderReplica || overloadedReplicas[0];
         }
+        
+        // Create new replicas list with the replacement
+        const newReplicas = range.replicas.map(replicaId => 
+          replicaId === replicaToReplace ? nodeId : replicaId
+        );
+        
+        // Get current movements and record this movement
+        const recentMovements = range.recentMovements || [];
+        let updatedMovements = this.recordReplicaMovement(
+          range.id,
+          replicaToReplace,
+          nodeId,
+          false,
+          recentMovements
+        );
+        
+        // Check if leaseholder is changing
+        const isLeaseholderChanging = range.leaseholder === replicaToReplace;
+        if (isLeaseholderChanging) {
+          updatedMovements = this.recordReplicaMovement(
+            range.id,
+            replicaToReplace,
+            nodeId,
+            true,
+            updatedMovements
+          );
+        }
+        
+        // Update our replica count tracking
+        replicaCounts.set(nodeId, (replicaCounts.get(nodeId) || 0) + 1);
+        replicaCounts.set(replicaToReplace, (replicaCounts.get(replicaToReplace) || 0) - 1);
+        
+        // Update the range
+        this.ranges[this.ranges.indexOf(range)] = {
+          ...range,
+          replicas: newReplicas,
+          leaseholder: isLeaseholderChanging ? nodeId : range.leaseholder,
+          recentMovements: updatedMovements
+        };
       });
     }
   }

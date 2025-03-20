@@ -313,14 +313,23 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                                 style={{
                                   width: '80px',
                                   height: '80px',
-                                  backgroundColor: node.status === 'online' ? 'white' : '#fecaca',
+                                  backgroundColor: node.status === 'online' 
+                                    ? nodeRanges.length > 5 
+                                      ? 'rgba(254, 215, 170, 0.7)' // Orange tint for heavily loaded nodes
+                                      : nodeRanges.length > 3
+                                        ? 'rgba(254, 240, 138, 0.5)' // Yellow tint for moderately loaded nodes
+                                        : 'white'
+                                    : '#fecaca', // Red background for offline nodes
                                   border: `2px solid ${node.status === 'online' ? '#22c55e' : '#ef4444'}`
                                 }}
-                                title={`Node ${node.id} (${node.status})`}
+                                title={`Node ${node.id} (${node.status}) - ${nodeRanges.length} replicas
+${nodeRanges.filter(r => isLeaseholder(node.id, r.id)).length} leaseholders
+Region: ${node.region}, Zone: ${node.zone}
+${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 'Low load'}`}
                               >
                                 <div className="absolute top-0 left-0 right-0 text-center text-xs font-bold py-0.5"
                                   style={{ backgroundColor: node.status === 'online' ? '#22c55e' : '#ef4444', color: 'white' }}>
-                                  {node.id}
+                                  {node.id} <span className="text-[9px]">({nodeRanges.length})</span>
                                 </div>
 
                                 <div className="flex flex-wrap justify-center gap-1 mt-5">
@@ -406,10 +415,10 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
         </div>
       </div>
 
-      {/* Compact legend with labels to the left of replicas */}
-      <div className="flex justify-center mt-2">
+      {/* Compact legend with both range and node load indicators */}
+      <div className="flex justify-center mt-2 flex-wrap gap-2">
         <div className="inline-flex items-center bg-white rounded-md shadow-sm border border-gray-200 py-0.5 px-2" style={{ maxWidth: 'fit-content' }}>
-          <span className="text-xs text-gray-700 font-medium mr-1.5">Legend:</span>
+          <span className="text-xs text-gray-700 font-medium mr-1.5">Ranges:</span>
           <div className="flex items-center">
             <div className="flex items-center mr-2">
               <div className="w-3.5 h-3.5 rounded-sm flex items-center justify-center"
@@ -420,14 +429,38 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
             <div className="flex items-center mr-2">
               <div className="w-3.5 h-3.5 rounded-sm flex items-center justify-center"
                 style={{ backgroundColor: '#9ca3af' }}>
-                <span className="text-[7px] text-white font-bold">Ordinary range</span>
+                <span className="text-[7px] text-white font-bold">Range</span>
               </div>
             </div>
             <div className="flex items-center">
               <div className="w-3.5 h-3.5 rounded-sm flex items-center justify-center"
                 style={{ backgroundColor: '#9ca3af', border: '2px solid #f97316' }}>
-                <span className="text-[7px] text-white font-bold">Hot range</span>
+                <span className="text-[7px] text-white font-bold">Hot</span>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="inline-flex items-center bg-white rounded-md shadow-sm border border-gray-200 py-0.5 px-2" style={{ maxWidth: 'fit-content' }}>
+          <span className="text-xs text-gray-700 font-medium mr-1.5">Node Load:</span>
+          <div className="flex items-center">
+            <div className="flex items-center mr-2">
+              <div className="w-3.5 h-3.5 rounded-sm"
+                style={{ backgroundColor: 'white', border: '1px solid #d1d5db' }}>
+              </div>
+              <span className="text-[9px] text-gray-600 ml-0.5">Low</span>
+            </div>
+            <div className="flex items-center mr-2">
+              <div className="w-3.5 h-3.5 rounded-sm"
+                style={{ backgroundColor: 'rgba(254, 240, 138, 0.5)', border: '1px solid #d1d5db' }}>
+              </div>
+              <span className="text-[9px] text-gray-600 ml-0.5">Medium</span>
+            </div>
+            <div className="flex items-center">
+              <div className="w-3.5 h-3.5 rounded-sm"
+                style={{ backgroundColor: 'rgba(254, 215, 170, 0.7)', border: '1px solid #d1d5db' }}>
+              </div>
+              <span className="text-[9px] text-gray-600 ml-0.5">High</span>
             </div>
           </div>
         </div>
@@ -455,6 +488,24 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
           Animating {replicaMovements.length} replica movement{replicaMovements.length > 1 ? 's' : ''}
         </div>
       )}
+      
+      {/* Show replica distribution metrics */}
+      <div className="text-xs text-gray-600 text-center mt-2 bg-gray-50 p-1 rounded-md border border-gray-200 mx-auto" style={{maxWidth: "fit-content"}}>
+        <div className="flex space-x-3">
+          <div>
+            <span className="font-medium">Regions with nodes:</span> {regions.length}
+          </div>
+          <div>
+            <span className="font-medium">Online nodes:</span> {nodes.filter(n => n.status === 'online').length}/{nodes.length}
+          </div>
+          <div>
+            <span className="font-medium">Total ranges:</span> {ranges.length}
+          </div>
+          <div>
+            <span className="font-medium">Total replicas:</span> {ranges.reduce((total, range) => total + range.replicas.length, 0)}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
