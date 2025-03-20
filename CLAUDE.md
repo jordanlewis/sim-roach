@@ -71,6 +71,7 @@ npm run lint
 - Node load visualization: Each node shows replica count with heatmap coloring (white = low, yellow = medium, orange = high)
 - Load balancing: The simulator now balances replicas both by diversity across regions/zones and by node load
 - Replica movement animations: Visual animations show replicas moving between nodes during failures and rebalancing
+- Enhanced animation stability: Multi-phase cleanup and improved tracking prevent replicas from disappearing during animations
 
 ## Key Implementation Details
 
@@ -82,10 +83,16 @@ npm run lint
 - `calculateNodeReplicaCounts`: Tracks load across the cluster
 
 ### Animation System
-- `ReplicaMovementAnimation.tsx`: Handles animations of replica movements
-- Uses vector calculations for proper motion direction
-- Animates with Framer Motion with particles and path effects
-- Tracks movements with timestamps for deduplication
+- Uses Framer Motion's layout animations for smooth replica movements
+- Position-based layoutId approach for reliable animation tracking
+- Multi-phase animation state management to prevent stuck animations
+- Key animation implementation in ClusterMap.tsx with these features:
+  - Stable position-based IDs (`replica-${range.id}-${position}`)
+  - Carefully tuned animation transitions for smooth movements
+  - Comprehensive layoutDependency arrays for reliable rendering
+  - Three-phase cleanup process with immediate cleanup, visual feedback, and verification
+  - Safety mechanisms to recover from stuck animation states
+  - Different transition settings for animating vs. static elements
 
 ### Load Balancing
 Replica placement follows these priorities:
