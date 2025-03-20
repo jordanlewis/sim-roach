@@ -296,13 +296,20 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                   overflowX: 'auto',
                   marginTop: '1rem',
                   flex: '1',
-                  paddingBottom: '0.5rem'
+                  padding: '0.5rem 0.75rem 0.75rem 0.5rem',
+                  margin: '0 -0.25rem' // to offset the padding and maintain alignment
                 }}>
                   {zones.map(zone => {
                     const zoneNodes = regionNodes.filter(node => node.zone === zone);
 
                     return (
-                      <div key={zone} className="border-l pl-3" style={{ borderColor: '#e5e7eb', flex: '0 0 auto', minWidth: '110px', maxWidth: '200px' }}>
+                      <div key={zone} className="border-l pl-3" style={{ 
+                        borderColor: '#e5e7eb', 
+                        flex: '0 0 auto', 
+                        minWidth: '110px', 
+                        maxWidth: '200px',
+                        padding: '0 0.5rem 0 0'
+                      }}>
                         <div className="text-sm font-medium mb-2" style={{ color: '#4b5563' }}>
                           Zone: {zone}
                         </div>
