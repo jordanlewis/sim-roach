@@ -69,11 +69,15 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
         if (element) {
           const rect = element.getBoundingClientRect();
 
-          // We need the exact center of the range area, which is a bit lower than the node center
-          // due to the node header. The ranges are in a flex container with mt-5
+          // Calculate the position of the grid container within the node
+          const rangeGridTop = rect.top + 24; // Header height
+          const rangeGridLeft = rect.left + (rect.width - 78) / 2; // Grid is 78px wide, centered
+
+          // Store the position of the top-left corner of the range grid
+          // This allows us to calculate exact positions for any range in the grid
           positions[nodeId] = {
-            x: window.scrollX + rect.left + rect.width / 2,
-            y: window.scrollY + rect.top + rect.height / 2 + 5
+            x: window.scrollX + rangeGridLeft,
+            y: window.scrollY + rangeGridTop
           };
         }
       });
@@ -384,7 +388,9 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                       movement.rangeId === range.id && movement.toNodeId === node.id
                                     );
 
-                                    // Show a placeholder in the source node, hide at destination until animation completes
+                                    // When a range is moving FROM this node, show a transparent placeholder
+                                    // When a range is moving TO this node, hide it completely until animation completes
+                                    // This allows the animation to show exactly where ranges come from and go to
                                     const shouldRenderPlaceholder = !!movementFromHere;
                                     const shouldHideCompletely = !!movementToHere;
 

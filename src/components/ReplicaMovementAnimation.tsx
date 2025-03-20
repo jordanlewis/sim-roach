@@ -16,17 +16,46 @@ export default function ReplicaMovementAnimation({
   const [isVisible, setIsVisible] = useState(true);
   const animationRef = useRef<HTMLDivElement>(null);
   
-  // Calculate positions
-  const fromPosition = nodePositions[movement.fromNodeId];
-  const toPosition = nodePositions[movement.toNodeId];
+  // Get base positions (top-left corner of the range grid for each node)
+  const fromNodeBase = nodePositions[movement.fromNodeId];
+  const toNodeBase = nodePositions[movement.toNodeId];
+  
+  // Define effect outside conditional block to satisfy React hooks rules
+  useEffect(() => {
+    // If we don't have positions for both nodes, complete the animation immediately
+    if (!fromNodeBase || !toNodeBase) {
+      onComplete();
+    }
+  }, [fromNodeBase, toNodeBase, onComplete]);
   
   // If we don't have positions for both nodes, don't render
-  if (!fromPosition || !toPosition) {
-    useEffect(() => {
-      onComplete();
-    }, [onComplete]);
+  if (!fromNodeBase || !toNodeBase) {
     return null;
   }
+  
+  // Each range is 20px × 20px and grid has 6px gaps
+  // Calculate the position within the grid for the range
+  const calculateRangePosition = (rangeIndex: number, basePosition: {x: number, y: number}) => {
+    // Each grid has 3 columns
+    const col = rangeIndex % 3;
+    const row = Math.floor(rangeIndex / 3);
+    
+    // Calculate exact position based on grid layout
+    // 20px for range width/height + 6px for gaps between ranges
+    const x = basePosition.x + col * (20 + 6) + 10; // 10 = half of range width (center point)
+    const y = basePosition.y + 20 + row * (20 + 6) + 10; // 20px margin-top + half of range height
+    
+    return { x, y };
+  };
+  
+  // Estimate the index of the range in both source and destination nodes
+  // This is imprecise since we don't know the exact index, but we can make a good guess
+  const fromIndex = parseInt(movement.rangeId.replace('r', '')) - 1;
+  const toIndex = parseInt(movement.rangeId.replace('r', '')) - 1;
+  
+  // Calculate precise from/to positions
+  const fromPosition = calculateRangePosition(fromIndex, fromNodeBase);
+  const toPosition = calculateRangePosition(toIndex, toNodeBase);
   
   // Calculate vector for animation direction
   const vectorX = toPosition.x - fromPosition.x;
@@ -37,42 +66,17 @@ export default function ReplicaMovementAnimation({
   const normalizedX = distance > 0 ? vectorX / distance : 0;
   const normalizedY = distance > 0 ? vectorY / distance : 0;
 
-  // Define animation properties - use a slightly longer duration for return flights
-  // to ensure smooth animation (return flights may have more complex state changes)
-  const animationDuration = 0.7; // seconds - faster animations look nicer
+  // Define animation properties - use a moderate duration so the animation is visible
+  // but doesn't feel sluggish
+  const animationDuration = 0.6; // seconds - fast animations for precise movements
   
-  // Manage animation lifecycle with guaranteed completion
-  useEffect(() => {
-    let completionTimer: ReturnType<typeof setTimeout>;
-    let animationStartTimer: ReturnType<typeof setTimeout>;
-    
-    // Wait a tiny bit before starting the animation for better visual sync
-    animationStartTimer = setTimeout(() => {
-      // Then wait for the full animation duration before cleaning up
-      // Use a longer timeout to ensure the animation has fully completed
-      completionTimer = setTimeout(() => {
-        setIsVisible(false);
-        onComplete();
-      }, animationDuration * 1000 + 100); // Add more buffer to ensure animation completes
-    }, 50); // 50ms delay before starting
-    
-    // Failsafe - ensure animation always completes even if something goes wrong
-    const finalCleanupTimer = setTimeout(() => {
-      setIsVisible(false);
-      onComplete();
-    }, (animationDuration + 1) * 1000); // Add a full extra second for absolute certainty
-    
-    return () => {
-      clearTimeout(animationStartTimer);
-      clearTimeout(completionTimer);
-      clearTimeout(finalCleanupTimer);
-    };
-  }, [onComplete, animationDuration]);
+  // We won't need the complex timing logic anymore since we use the motion
+  // component's onAnimationComplete event for reliable completion
 
   if (!isVisible) return null;
   
   // Size of our range representation (same as in ClusterMap)
-  const size = 12; // Our replica squares are 4px, but we want to display larger during animation
+  const size = 20; // Match exactly to the size in ClusterMap (20px)
   const offset = size / 2;
   
   // Colors based on motion type
@@ -122,21 +126,20 @@ export default function ReplicaMovementAnimation({
         }}
         transition={{
           duration: animationDuration,
-          ease: "easeInOut",
-          delay: 0.05 // tiny delay to ensure the source placeholder is shown first
+          ease: "easeInOut"
         }}
         onAnimationComplete={() => {
-          // Add a short delay before triggering completion to ensure visual continuity
-          setTimeout(() => {
-            setIsVisible(false);
-            onComplete();
-          }, 50);
+          // Complete immediately - we have precise positioning now
+          setIsVisible(false);
+          onComplete();
         }}
       >
         <div 
-          className={`w-full h-full rounded-sm flex items-center justify-center ${
-            movement.isLeaseholder ? 'bg-blue-500' : 'bg-gray-500'
-          }`}
+          className="w-full h-full rounded-sm flex items-center justify-center relative"
+          style={{
+            padding: '2px',
+            backgroundColor: movement.isLeaseholder ? '#3b82f6' : '#9ca3af'
+          }}
         >
           <span className="text-[7px] text-white font-bold">
             {movement.rangeId.replace('r', '')}
