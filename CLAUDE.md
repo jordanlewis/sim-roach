@@ -72,6 +72,8 @@ npm run lint
 - Load balancing: The simulator now balances replicas both by diversity across regions/zones and by node load
 - Replica movement animations: Visual animations show replicas moving between nodes during failures and rebalancing
 - Enhanced animation stability: Multi-phase cleanup and improved tracking prevent replicas from disappearing during animations
+- Cross-region animation support: Replicas can now animate smoothly between regions
+- Improved hover interactions: CSS-based hover effects with stable sizing to prevent layout shifts
 
 ## Key Implementation Details
 
@@ -86,13 +88,16 @@ npm run lint
 - Uses Framer Motion's layout animations for smooth replica movements
 - Position-based layoutId approach for reliable animation tracking
 - Multi-phase animation state management to prevent stuck animations
+- CSS-based hover effects for performance and stability
 - Key animation implementation in ClusterMap.tsx with these features:
   - Stable position-based IDs (`replica-${range.id}-${position}`)
   - Carefully tuned animation transitions for smooth movements
+  - Cross-region animation support with `overflow: visible` containers
   - Comprehensive layoutDependency arrays for reliable rendering
   - Three-phase cleanup process with immediate cleanup, visual feedback, and verification
   - Safety mechanisms to recover from stuck animation states
   - Different transition settings for animating vs. static elements
+  - Layout-shift-free hover interactions with absolute positioning and box-sizing
 
 ### Load Balancing
 Replica placement follows these priorities:
