@@ -248,14 +248,15 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
             return (
               <div
                 key={region}
-                className="border rounded-lg p-3"
+                className="border rounded-lg"
                 style={{
                   borderColor: allNodesOffline ? '#ef4444' : (hasOfflineNodes ? '#f97316' : '#d1d5db'),
                   backgroundColor: allNodesOffline ? 'rgba(254, 202, 202, 0.3)' : 'rgba(255, 255, 255, 0.7)',
                   minHeight: '320px',
                   display: 'flex',
                   flexDirection: 'column',
-                  overflow: 'hidden'
+                  overflow: 'hidden',
+                  padding: '0.75rem 1rem'
                 }}
               >
                 <motion.div className="flex items-center space-x-1 mb-3">
@@ -301,7 +302,7 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
                     const zoneNodes = regionNodes.filter(node => node.zone === zone);
 
                     return (
-                      <div key={zone} className="border-l pl-2" style={{ borderColor: '#e5e7eb', flex: '0 0 auto', minWidth: '110px', maxWidth: '200px' }}>
+                      <div key={zone} className="border-l pl-3" style={{ borderColor: '#e5e7eb', flex: '0 0 auto', minWidth: '110px', maxWidth: '200px' }}>
                         <div className="text-sm font-medium mb-2" style={{ color: '#4b5563' }}>
                           Zone: {zone}
                         </div>
