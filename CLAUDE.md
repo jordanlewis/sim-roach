@@ -64,6 +64,12 @@ npm run typecheck
 - Add new commands, components, or code patterns as they emerge
 - Update features list when new features are added
 
+## Workflow Preferences
+- DO NOT commit or push changes without explicit confirmation
+- Make code changes and wait for testing in the development environment
+- Only commit and push when instructed to do so
+- Run linting and type checking before submitting code for review
+
 ## Recently Implemented Features
 - Node load visualization: Each node shows replica count with heatmap coloring (white = low, yellow = medium, orange = high)
 - Load balancing: The simulator now balances replicas both by diversity across regions/zones and by node load
