@@ -388,7 +388,7 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                           border: isHot ? '2px solid #f97316' : '2px solid rgba(59, 130, 246, 0.8)'
                                         }}
                                       >
-                                        {!shouldRenderPlaceholder && (
+                                        {!isSource && (
                                           <span className="text-[7px] text-white font-bold">
                                             {range.id.replace('r', '')}
                                           </span>
