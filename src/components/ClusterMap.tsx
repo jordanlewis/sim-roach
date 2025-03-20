@@ -385,17 +385,23 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                         className="w-4 h-4 rounded-sm flex items-center justify-center relative"
                                         style={{
                                           backgroundColor: shouldRenderPlaceholder ? 'rgba(156, 163, 175, 0.2)' : (isLeaseHolder ? '#3b82f6' : '#9ca3af'),
-                                          border: isHot ? '2px solid #f97316' : 'none',
-                                          transform: isRangeHighlighted ? 'scale(1.3)' : 'scale(1)',
+                                          border: isHot 
+                                            ? '2px solid #f97316' 
+                                            : isRangeHighlighted 
+                                              ? '2px solid rgba(59, 130, 246, 0.8)' 
+                                              : 'none',
                                           zIndex: isRangeHighlighted ? 10 : 1,
-                                          transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
-                                          boxShadow: isRangeHighlighted ? '0 0 5px 2px rgba(59, 130, 246, 0.5)' : 'none',
+                                          transition: 'border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+                                          boxShadow: isRangeHighlighted ? '0 0 5px 1px rgba(59, 130, 246, 0.5)' : 'none',
                                           opacity: shouldRenderPlaceholder ? 0.5 : 1
                                         }}
                                         title={`Range ${range.id} ${isLeaseHolder ? '(Leaseholder)' : ''} - ${rangeData?.load} RPS${shouldRenderPlaceholder ? ' (Moving...)' : ''}`}
                                         onMouseEnter={() => handleRangeMouseEnter(range.id)}
                                         onMouseLeave={handleRangeMouseLeave}
-                                        whileHover={{ scale: 1.3 }}
+                                        whileHover={{
+                                          boxShadow: '0 0 5px 2px rgba(59, 130, 246, 0.6)',
+                                          border: isHot ? '2px solid #f97316' : '2px solid rgba(59, 130, 246, 0.8)'
+                                        }}
                                       >
                                         {!shouldRenderPlaceholder && (
                                           <span className="text-[7px] text-white font-bold">
