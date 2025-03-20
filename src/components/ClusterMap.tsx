@@ -57,16 +57,25 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
     return highlightedRangeId === rangeId;
   };
 
-  // With Framer Motion's layout animations, we don't need to track node positions
-  // as framer motion will handle the animation automatically with layoutId
+  // Reset animation state when nodes or ranges change significantly
   useEffect(() => {
-    // With Framer Motion layout animations, we don't need position tracking
-    // The framework will handle all the animations automatically
+    // This safety mechanism ensures animation state is reset when configuration changes drastically
+    // For example, when toggling a node from offline to online or vice versa
+    
+    // Clear animation tracking state after a short delay to allow new animations to be set up
+    const timer = setTimeout(() => {
+      // Check if we have any stuck animations - they should clear within 2 seconds
+      if (Object.keys(animatingReplicas).length > 0) {
+        console.log("Potential stuck animations detected - resetting animation state");
+        setAnimatingReplicas({});
+        setReplicaMovements([]);
+      }
+    }, 2000);
     
     return () => {
-      // No event listeners to clean up
+      clearTimeout(timer);
     };
-  }, [nodes, ranges]); // Re-run when nodes or ranges change
+  }, [nodes, ranges, animatingReplicas]); // Re-run when nodes or ranges change
   
   // Configure layout animation transition settings
   const layoutTransition = {
@@ -77,6 +86,14 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
 
   // Extract and deduplicate recent movements from all ranges
   useEffect(() => {
+    // Clear animating replicas if there are no movements in progress
+    // This helps recover from any stuck animation state
+    if (replicaMovements.length === 0 && Object.keys(animatingReplicas).length > 0) {
+      console.log("Resetting animating replicas state - no movements in progress");
+      setAnimatingReplicas({});
+      return;
+    }
+
     // Collect all movements from all ranges
     const allMovements: ReplicaMovement[] = [];
     ranges.forEach(range => {
@@ -98,61 +115,99 @@ export default function ClusterMap({ nodes, ranges, onNodeClick, onRegionClick }
       const newestTimestamp = Math.max(...sortedNewMovements.map(m => m.timestamp));
       setLastMovementTimestamp(newestTimestamp);
 
-      // Process movements in batches to ensure animations are coherent
-      // Update the animating replicas mapping to track which replicas are in motion
+      // Create a fresh tracking object for new movements
       const newAnimatingReplicas = { ...animatingReplicas };
+      let needToUpdateAnimatingReplicas = false;
 
       // Process all movements - with layout animations we don't need to check positions
       sortedNewMovements.forEach(movement => {
+        // Skip movements to or from offline nodes - they won't animate correctly
+        const fromNode = nodes.find(n => n.id === movement.fromNodeId);
+        const toNode = nodes.find(n => n.id === movement.toNodeId);
+        
+        if (!fromNode || !toNode) return; // Skip if nodes don't exist
+        
         // Track that this range is moving from its original node
         if (!newAnimatingReplicas[movement.fromNodeId]) {
           newAnimatingReplicas[movement.fromNodeId] = new Set<string>();
+          needToUpdateAnimatingReplicas = true;
         }
-        newAnimatingReplicas[movement.fromNodeId].add(movement.rangeId);
+        
+        if (!newAnimatingReplicas[movement.fromNodeId].has(movement.rangeId)) {
+          newAnimatingReplicas[movement.fromNodeId].add(movement.rangeId);
+          needToUpdateAnimatingReplicas = true;
+        }
 
         // Also note that it's moving to a destination node
         if (!newAnimatingReplicas[movement.toNodeId]) {
           newAnimatingReplicas[movement.toNodeId] = new Set<string>();
+          needToUpdateAnimatingReplicas = true;
         }
-        newAnimatingReplicas[movement.toNodeId].add(movement.rangeId);
+        
+        if (!newAnimatingReplicas[movement.toNodeId].has(movement.rangeId)) {
+          newAnimatingReplicas[movement.toNodeId].add(movement.rangeId);
+          needToUpdateAnimatingReplicas = true;
+        }
       });
 
-      setAnimatingReplicas(newAnimatingReplicas);
+      // Only update state if we actually made changes
+      if (needToUpdateAnimatingReplicas) {
+        console.log("Updating animatingReplicas with new movements");
+        setAnimatingReplicas(newAnimatingReplicas);
+      }
       setReplicaMovements(sortedNewMovements);
     }
-  }, [ranges, lastMovementTimestamp, animatingReplicas]);
+  }, [ranges, nodes, lastMovementTimestamp, animatingReplicas, replicaMovements]);
 
   // Handle when an animation completes - with guaranteed cleanup
   const handleAnimationComplete = (completedMovement: ReplicaMovement) => {
     console.log("Animation complete:", completedMovement.rangeId, completedMovement.fromNodeId, "->", completedMovement.toNodeId);
 
-    // Ensure we remove this specific animation from the list
-    setReplicaMovements(current => {
-      return current.filter(m => m.timestamp !== completedMovement.timestamp);
-    });
+    // First immediate cleanup - remove this movement from the active list
+    setReplicaMovements(current => 
+      current.filter(m => m.timestamp !== completedMovement.timestamp)
+    );
 
-    // Clean up tracking sets - use the functional update pattern for reliability
-    setAnimatingReplicas(current => {
-      const updated = { ...current };
-
-      // Clean source node tracking
-      if (updated[completedMovement.fromNodeId]) {
-        updated[completedMovement.fromNodeId].delete(completedMovement.rangeId);
-        if (updated[completedMovement.fromNodeId].size === 0) {
-          delete updated[completedMovement.fromNodeId];
+    // Use a short timeout to ensure React has a chance to process the state update
+    // before we modify the animatingReplicas state - this helps prevent race conditions
+    setTimeout(() => {
+      console.log("Cleaning up animatingReplicas for", completedMovement.rangeId);
+      
+      // Clean up tracking sets - use the functional update pattern for reliability
+      setAnimatingReplicas(current => {
+        // Create a brand new object to ensure React detects the change
+        const updated = {};
+        
+        // Copy all entries except the one we're cleaning up
+        for (const [nodeId, rangeSet] of Object.entries(current)) {
+          // We need to manually recreate each Set
+          const newRangeSet = new Set<string>();
+          
+          // Only copy ranges that aren't the one that just completed animation
+          rangeSet.forEach(rangeId => {
+            if (!(
+              (nodeId === completedMovement.fromNodeId || nodeId === completedMovement.toNodeId) && 
+              rangeId === completedMovement.rangeId
+            )) {
+              newRangeSet.add(rangeId);
+            }
+          });
+          
+          // Only keep the node entry if it still has ranges to animate
+          if (newRangeSet.size > 0) {
+            updated[nodeId] = newRangeSet;
+          }
         }
-      }
-
-      // Clean destination node tracking
-      if (updated[completedMovement.toNodeId]) {
-        updated[completedMovement.toNodeId].delete(completedMovement.rangeId);
-        if (updated[completedMovement.toNodeId].size === 0) {
-          delete updated[completedMovement.toNodeId];
-        }
-      }
-
-      return updated;
-    });
+        
+        console.log("Updated animatingReplicas:", 
+          Object.entries(updated).map(([nodeId, rangeSet]) => 
+            `${nodeId}: ${Array.from(rangeSet as Set<string>).join(', ')}`
+          ).join(' | ')
+        );
+        
+        return updated;
+      });
+    }, 10); // Tiny delay to ensure state updates are processed in the right order
 
     // Flash target node to show completion - if we have its position
     const targetNodeRef = nodeRefs.current[completedMovement.toNodeId];
@@ -343,11 +398,8 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                     // We'll use Framer Motion's layout animations to handle the transitions
                                     const isAnimating = !!movementFromHere || !!movementToHere;
                                     
-                                    // If the range is being animated FROM this node, we'll keep it in place
-                                    // with reduced opacity. If it's animating TO this node, we'll still
-                                    // render it (with layoutId) but make it invisible initially
-                                    const isSource = !!movementFromHere;
-                                    const isDestination = !!movementToHere;
+                                    // For layout animation, whether this is source or destination doesn't 
+                                    // affect appearance any more, only animation behavior
 
                                     return (
                                       <motion.div
@@ -363,7 +415,7 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                           height: '20px', 
                                           flexShrink: 0,
                                           padding: '2px',
-                                          backgroundColor: isSource ? 'rgba(156, 163, 175, 0.2)' : (isLeaseHolder ? '#3b82f6' : '#9ca3af'),
+                                          backgroundColor: isLeaseHolder ? '#3b82f6' : '#9ca3af',
                                           border: isHot 
                                             ? '2px solid #f97316' 
                                             : isRangeHighlighted 
@@ -371,16 +423,21 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                               : 'none',
                                           zIndex: isRangeHighlighted ? 10 : 1,
                                           transition: 'border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
-                                          boxShadow: isRangeHighlighted ? '0 0 5px 1px rgba(59, 130, 246, 0.5)' : 'none',
-                                          opacity: isSource ? 0.2 : (isDestination ? 0 : 1)
+                                          boxShadow: isRangeHighlighted ? '0 0 5px 1px rgba(59, 130, 246, 0.5)' : 'none'
                                         }}
-                                        // Handle completion when destination range finishes its entrance animation
+                                        // Handle completion when any animation involving this range completes
                                         onLayoutAnimationComplete={() => {
-                                          if (isDestination && movementToHere) {
-                                            handleAnimationComplete(movementToHere);
+                                          // Always clean up animations to ensure ranges appear properly
+                                          if (isAnimating) {
+                                            if (movementFromHere) {
+                                              handleAnimationComplete(movementFromHere);
+                                            }
+                                            if (movementToHere) {
+                                              handleAnimationComplete(movementToHere);
+                                            }
                                           }
                                         }}
-                                        title={`Range ${range.id} ${isLeaseHolder ? '(Leaseholder)' : ''} - ${rangeData?.load} RPS${isSource ? ' (Moving...)' : ''}`}
+                                        title={`Range ${range.id} ${isLeaseHolder ? '(Leaseholder)' : ''} - ${rangeData?.load} RPS`}
                                         onMouseEnter={() => handleRangeMouseEnter(range.id)}
                                         onMouseLeave={handleRangeMouseLeave}
                                         whileHover={{
@@ -388,11 +445,9 @@ ${nodeRanges.length > 5 ? 'High load' : nodeRanges.length > 3 ? 'Medium load' : 
                                           border: isHot ? '2px solid #f97316' : '2px solid rgba(59, 130, 246, 0.8)'
                                         }}
                                       >
-                                        {!isSource && (
-                                          <span className="text-[7px] text-white font-bold">
-                                            {range.id.replace('r', '')}
-                                          </span>
-                                        )}
+                                        <span className="text-[7px] text-white font-bold">
+                                          {range.id.replace('r', '')}
+                                        </span>
 
                                         {/* Show connection lines when highlighted */}
                                         {isRangeHighlighted && (
